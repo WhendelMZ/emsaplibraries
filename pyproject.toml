@@ -1,0 +1,6 @@
+[project]
+name = "EMSAP"
+version = "1.0"
+dependencies = [
+    "biopython"
+]
