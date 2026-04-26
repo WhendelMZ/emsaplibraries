@@ -1,4 +1,5 @@
 import csv
+import tempfile
 from collections import defaultdict
 from Bio import SeqIO, AlignIO
 from Bio.Seq import Seq
@@ -35,83 +36,162 @@ def load_manifest(manifest_path):
 
     return manifest_data
 
-def align_sequences( 
-    fasta_ref_protein,       # protein reference
-    manifest_data,           # user-provided sequences 
-    trim_seq                 # output file with trimmed sequences
-):
+
+def build_combined_fasta(fasta_ref, manifest_data, output_path):
     """
-    This function detects whether the input sequences are DNA or protein,
-    selects the appropriate protein reference, aligns all sequences using MAFFT, identifies the ungapped region of the
-    reference in the alignment, and trims all user sequences to match that
-    region while preserving gaps.
+    Create a combined FASTA file containing the reference sequence and selected user sequences.
+
+    Parameters:
+        fasta_ref (str): Path to reference FASTA file.
+        manifest_data (dict): Dictionary mapping FASTA files to sequence IDs.
+        output_path (str): Path to save the combined FASTA file.
     """
-    if isinstance(manifest_data, str):
-     manifest_data = load_manifest(manifest_data)
-
-    # Select the appropriate reference based on sequence type
-    fasta_ref = fasta_ref_protein        # use protein reference
-
-    # Create combined FASTA for alignment
-    import tempfile
-
-    to_align = tempfile.NamedTemporaryFile(delete=False).name
-    aligned = tempfile.NamedTemporaryFile(delete=False).name
-
-    # join reference + user sequences into a single FASTA
+    # Load reference sequence(s)
     records = list(SeqIO.parse(fasta_ref, "fasta"))
 
+    # Iterate through user-provided FASTA files
     for fasta_path, entries in manifest_data.items():
-        ids = {entry["id"] for entry in entries}  # extrai só os IDs
+        # Extract only the IDs of interest
+        ids = {entry["id"] for entry in entries}
+
+        # Parse sequences and filter by ID
         for record in SeqIO.parse(fasta_path, "fasta"):
             if record.id in ids:
                 records.append(record)
 
-    SeqIO.write(records, to_align, "fasta")  # write combined FASTA
+    # Write all selected sequences to a single FASTA file
+    SeqIO.write(records, output_path, "fasta")
 
-    # Run MAFFT to generate alignment
-    mafft_cline = MafftCommandline(input=to_align)  # default MAFFT command
-    stdout, stderr = mafft_cline()                  # execute MAFFT and capture output
 
-    with open(aligned, "w") as handle:
-        handle.write(stdout)                        # save alignment to disk
+def run_mafft(input_fasta, output_fasta):
+    """
+    Perform multiple sequence alignment using MAFFT.
 
-    alignment = AlignIO.read(aligned, "fasta")      # load alignment into memory
+    Parameters:
+        input_fasta (str): Path to input FASTA file.
+        output_fasta (str): Path to save aligned FASTA file.
+    """
+    # Initialize MAFFT command line
+    mafft_cline = MafftCommandline(input=input_fasta)
 
-    # Find the reference sequence inside the alignment
-    ref_id = next(SeqIO.parse(fasta_ref, "fasta")).id   # ID of the original reference
+    # Execute MAFFT and capture output
+    stdout, stderr = mafft_cline()
 
-    aligned_ref_seq = None
-    for reg in alignment:                               # traverse aligned sequences
-        if reg.id == ref_id:                            # identify reference inside alignment
-            aligned_ref_seq = str(reg.seq)
-            break
+    # Save alignment result to file
+    with open(output_fasta, "w") as handle:
+        handle.write(stdout)
 
-    if aligned_ref_seq is None:
-        raise ValueError("Reference sequence not found in alignment!")  # if missing, raise error
 
-    # Determine beginning and end of the reference (ignoring gaps)
+def load_alignment(aligned_fasta):
+    """
+    Load a multiple sequence alignment from a FASTA file.
+
+    Parameters:
+        aligned_fasta (str): Path to aligned FASTA file.
+
+    Returns:
+        MultipleSeqAlignment: Biopython alignment object.
+    """
+    return AlignIO.read(aligned_fasta, "fasta")
+
+
+def get_reference_id(fasta_ref):
+    """
+    Retrieve the ID of the reference sequence.
+
+    Parameters:
+        fasta_ref (str): Path to reference FASTA file.
+
+    Returns:
+        str: Reference sequence ID.
+    """
+    return next(SeqIO.parse(fasta_ref, "fasta")).id
+
+
+def extract_aligned_reference(alignment, ref_id):
+    """
+    Extract the aligned reference sequence from the alignment.
+
+    Parameters:
+        alignment (MultipleSeqAlignment): Alignment object.
+        ref_id (str): Reference sequence ID.
+
+    Returns:
+        str: Aligned reference sequence as a string.
+
+    Raises:
+        ValueError: If the reference sequence is not found.
+    """
+    # Search for the reference sequence in the alignment
+    for record in alignment:
+        if record.id == ref_id:
+            return str(record.seq)
+
+    # Raise error if not found
+    raise ValueError("Reference sequence not found in alignment!")
+
+
+def get_trim_positions(aligned_ref_seq):
+    """
+    Determine the start and end positions of the reference sequence excluding gaps.
+
+    Parameters:
+        aligned_ref_seq (str): Aligned reference sequence.
+
+    Returns:
+        tuple: (start, end) positions defining the ungapped region.
+    """
+    # Identify positions that are not gaps
     non_gap_positions = [i for i, aa in enumerate(aligned_ref_seq) if aa != "-"]
-    start_pos = non_gap_positions[0]
-    end_pos = non_gap_positions[-1] + 1
 
-    # positions in the aligned protein
-    start_pos_protein = start_pos
-    end_pos_protein = end_pos
+    # First and last valid positions define trimming boundaries
+    start = non_gap_positions[0]
+    end = non_gap_positions[-1] + 1
 
-    # Trim each sequence based on the reference interval
-    trimmed_seqs = []
-    for reg in alignment:
-        if reg.id == ref_id:                       # skip reference in output
+    return start, end
+
+
+def trim_alignment(alignment, ref_id, start, end):
+    """
+    Trim all sequences in the alignment based on reference boundaries.
+
+    Parameters:
+        alignment (MultipleSeqAlignment): Alignment object.
+        ref_id (str): Reference sequence ID.
+        start (int): Start position for trimming.
+        end (int): End position for trimming.
+
+    Returns:
+        list: List of trimmed SeqRecord objects.
+    """
+    trimmed = []
+
+    # Iterate through all sequences in the alignment
+    for record in alignment:
+        # Skip the reference sequence
+        if record.id == ref_id:
             continue
 
-        seq_segment = str(reg.seq[start_pos:end_pos])  # cut segment while preserving gaps
-        new_record = SeqRecord(Seq(seq_segment), id=reg.id, description=reg.description)
-        trimmed_seqs.append(new_record)                # add trimmed sequence
+        # Extract the segment corresponding to the reference region
+        segment = str(record.seq[start:end])
 
-    SeqIO.write(trimmed_seqs, trim_seq, "fasta")       # save trimmed sequences
+        # Create a new SeqRecord preserving metadata
+        trimmed.append(
+            SeqRecord(Seq(segment), id=record.id, description=record.description)
+        )
 
-    return start_pos_protein, end_pos_protein          # return informative positions
+    return trimmed
+
+
+def save_fasta(records, output_path):
+    """
+    Save a list of sequences to a FASTA file.
+
+    Parameters:
+        records (list): List of SeqRecord objects.
+        output_path (str): Path to output FASTA file.
+    """
+    SeqIO.write(records, output_path, "fasta")
 
 def clear_ambiguous_amino_acids(manifest_csv, fasta_input, fasta_output):
 
