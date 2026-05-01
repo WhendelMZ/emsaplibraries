@@ -13,9 +13,7 @@ def require_executable(name: str, install_hint: str | None = None) -> str:
         return executable
 
     hint = f" {install_hint}" if install_hint else ""
-    raise RuntimeError(
-        f"Required executable '{name}' was not found on PATH.{hint}"
-    )
+    raise RuntimeError(f"Required executable '{name}' was not found on PATH.{hint}")
 
 
 def require_module(module_name: str, package_hint: str | None = None):

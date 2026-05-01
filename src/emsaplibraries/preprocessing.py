@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 import csv
+from collections import defaultdict
 from pathlib import Path
 
 from ._runtime import require_executable, require_module
@@ -29,7 +29,9 @@ def load_manifest(manifest_path: str | Path):
     return manifest_data
 
 
-def build_combined_fasta(fasta_ref: str | Path, manifest_data, output_path: str | Path) -> None:
+def build_combined_fasta(
+    fasta_ref: str | Path, manifest_data, output_path: str | Path
+) -> None:
     """Create a combined FASTA containing the reference and selected sequences."""
     seq_io, _, _, _ = _bio_modules()
     records = list(seq_io.parse(str(fasta_ref), "fasta"))
@@ -91,7 +93,11 @@ def trim_alignment(alignment, ref_id: str, start: int, end: int):
         if record.id == ref_id:
             continue
         segment = str(record.seq[start:end])
-        trimmed.append(seq_record_cls(seq_cls(segment), id=record.id, description=record.description))
+        trimmed.append(
+            seq_record_cls(
+                seq_cls(segment), id=record.id, description=record.description
+            )
+        )
     return trimmed
 
 

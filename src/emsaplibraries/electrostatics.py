@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import os
 import subprocess
+from pathlib import Path
 
 import numpy as np
 
@@ -92,8 +92,12 @@ def generate_apbs_in_fixed(
         handle.write("elec\n")
         handle.write("  mg-auto\n")
         handle.write(f"  dime {dime[0]} {dime[1]} {dime[2]}\n")
-        handle.write(f"  fglen {bbox_size[0]:.3f} {bbox_size[1]:.3f} {bbox_size[2]:.3f}\n")
-        handle.write(f"  cglen {bbox_size[0]:.3f} {bbox_size[1]:.3f} {bbox_size[2]:.3f}\n")
+        handle.write(
+            f"  fglen {bbox_size[0]:.3f} {bbox_size[1]:.3f} {bbox_size[2]:.3f}\n"
+        )
+        handle.write(
+            f"  cglen {bbox_size[0]:.3f} {bbox_size[1]:.3f} {bbox_size[2]:.3f}\n"
+        )
         handle.write(f"  fgcent {center[0]:.3f} {center[1]:.3f} {center[2]:.3f}\n")
         handle.write(f"  cgcent {center[0]:.3f} {center[1]:.3f} {center[2]:.3f}\n")
         handle.write("  mol 1\n")
@@ -136,7 +140,9 @@ def run_apbs(pdb_file: str | Path, pdb_name: str, bbox_min, bbox_max) -> str:
     log_path = os.path.abspath(f"{pdb_name}.out")
 
     with open(log_path, "w", encoding="utf-8") as log_handle:
-        subprocess.run(["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(
+            ["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True
+        )
 
     return log_path
 
@@ -148,7 +154,9 @@ def find_dx_file(pdb_name: str) -> str:
         f"{pdb_name}.dx",
         f"{pdb_name}.dx-PE0.dx",
     ]
-    dx_path = next((os.path.abspath(path) for path in candidates if os.path.isfile(path)), None)
+    dx_path = next(
+        (os.path.abspath(path) for path in candidates if os.path.isfile(path)), None
+    )
     if dx_path is None:
         raise FileNotFoundError(f"DX file not found for {pdb_name}.")
     return dx_path

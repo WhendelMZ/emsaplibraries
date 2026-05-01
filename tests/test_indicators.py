@@ -52,7 +52,10 @@ def test_interpolate_potential_on_unit_grid():
     grid = np.arange(8, dtype=float).reshape((2, 2, 2))
     atom = CustomAtom("X", "RES", "A", "1", np.array([0.5, 0.5, 0.5]), 0.0)
 
-    assert interpolate_potential(atom, grid, np.array([0.0, 0.0, 0.0]), (1.0, 1.0, 1.0)) == 3.5
+    assert (
+        interpolate_potential(atom, grid, np.array([0.0, 0.0, 0.0]), (1.0, 1.0, 1.0))
+        == 3.5
+    )
 
 
 def test_calculate_q_sasa_smoke(tmp_path):

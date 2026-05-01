@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import os
 import warnings
 import zipfile
+from pathlib import Path
 
 from ._runtime import require_module
 
@@ -21,7 +21,23 @@ def build_mapping_from_manifest(manifest_data) -> dict[str, str]:
 
 def clean_name(name: str) -> str:
     """Sanitize names for filenames."""
-    for ch in [" ", "|", ";", ",", "/", "\\", "(", ")", "[", "]", "{", "}", ":", "=", "+"]:
+    for ch in [
+        " ",
+        "|",
+        ";",
+        ",",
+        "/",
+        "\\",
+        "(",
+        ")",
+        "[",
+        "]",
+        "{",
+        "}",
+        ":",
+        "=",
+        "+",
+    ]:
         name = name.replace(ch, "_")
     return name
 
@@ -90,23 +106,38 @@ def extract_cif_and_confidence_files(
 
                     if "model_0" in inner_name.lower():
                         dest_path = make_unique_path(cif_path / dest_filename)
-                        with zip_ref.open(file_info) as src, open(dest_path, "wb") as dst:
+                        with (
+                            zip_ref.open(file_info) as src,
+                            open(dest_path, "wb") as dst,
+                        ):
                             dst.write(src.read())
                         extracted_cif += 1
-                    elif any(k in inner_name.lower() for k in ["confidence_0", "confidences_0"]):
+                    elif any(
+                        k in inner_name.lower()
+                        for k in ["confidence_0", "confidences_0"]
+                    ):
                         if seq_id not in seen_confidences:
                             dest_path = make_unique_path(qm_path / dest_filename)
-                            with zip_ref.open(file_info) as src, open(dest_path, "wb") as dst:
+                            with (
+                                zip_ref.open(file_info) as src,
+                                open(dest_path, "wb") as dst,
+                            ):
                                 dst.write(src.read())
                             extracted_qm += 1
                             seen_confidences.add(seq_id)
         except zipfile.BadZipFile:
-            warnings.warn(f"Invalid ZIP file: {archive_path.name}", RuntimeWarning)
+            warnings.warn(
+                f"Invalid ZIP file: {archive_path.name}",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
     return extracted_cif, extracted_qm
 
 
-def cif_to_pdb(cif_folder: str | Path, pdb_folder: str | Path, mapping: dict[str, str]) -> list[Path]:
+def cif_to_pdb(
+    cif_folder: str | Path, pdb_folder: str | Path, mapping: dict[str, str]
+) -> list[Path]:
     """Convert CIF files to PDB format using a mapping dict."""
     bio_pdb = require_module("Bio.PDB", "pip install biopython")
     output = Path(pdb_folder)
@@ -176,7 +207,9 @@ def relax_pdbs(input_folder: str | Path, output_folder: str | Path) -> None:
             atom_id = pr["AtomID"](pose.residue(index).atom_index("CA"), index)
             xyz = pose.residue(index).xyz("CA")
             xyz_vec = pr["xyzVector_double_t"](xyz.x, xyz.y, xyz.z)
-            constraint = pr["CoordinateConstraint"](atom_id, pr["AtomID"](1, 1), xyz_vec, func)
+            constraint = pr["CoordinateConstraint"](
+                atom_id, pr["AtomID"](1, 1), xyz_vec, func
+            )
             pose.add_constraint(constraint)
 
     for filename in os.listdir(input_folder):

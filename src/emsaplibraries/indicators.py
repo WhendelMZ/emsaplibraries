@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
-from dataclasses import dataclass
 import math
-from pathlib import Path
 import re
 import shutil
 import subprocess
 import warnings
+from collections import defaultdict
+from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -44,14 +44,16 @@ def extract_epi(pdb_filename: str) -> str:
     return match.group(0) if match else "N/A"
 
 
-def parse_dx(dx_file: str | Path) -> tuple[np.ndarray, np.ndarray, tuple[float, float, float]]:
+def parse_dx(
+    dx_file: str | Path,
+) -> tuple[np.ndarray, np.ndarray, tuple[float, float, float]]:
     """Parse APBS/OpenDX potential grid data from a DX file."""
     origin = None
     grid_size = None
     spacing = [1.0, 1.0, 1.0]
     potentials: list[float] = []
 
-    with open(dx_file, "r", encoding="utf-8") as handle:
+    with open(dx_file, encoding="utf-8") as handle:
         for line in handle:
             parts = line.split()
             if not parts or parts[0].startswith("#"):
@@ -78,7 +80,8 @@ def parse_dx(dx_file: str | Path) -> tuple[np.ndarray, np.ndarray, tuple[float, 
     expected = int(np.prod(grid_size))
     if len(potentials) != expected:
         raise ValueError(
-            f"DX potential count ({len(potentials)}) does not match grid size ({expected})."
+            f"DX potential count ({len(potentials)}) does not match grid size "
+            f"({expected})."
         )
 
     potential_grid = np.array(potentials).reshape(grid_size)
@@ -130,7 +133,7 @@ def parse_pqr(pqr_file: str | Path) -> tuple[np.ndarray, np.ndarray, np.ndarray]
     charges: list[float] = []
     radii: list[float] = []
 
-    with open(pqr_file, "r", encoding="utf-8") as handle:
+    with open(pqr_file, encoding="utf-8") as handle:
         for line in handle:
             if line.startswith(("ATOM", "HETATM")):
                 parts = line.split()
@@ -178,7 +181,9 @@ def _sasa_from_coords(
 
     if atoms is None:
         for index, (x, y, z) in enumerate(coords):
-            structure.addAtom("X", "RES", str(index + 1), "A", float(x), float(y), float(z))
+            structure.addAtom(
+                "X", "RES", str(index + 1), "A", float(x), float(y), float(z)
+            )
     else:
         for atom in atoms:
             structure.addAtom(
@@ -254,7 +259,10 @@ def calculate_see(
     pdb_file: str | Path | None = None,
     debug: bool = False,
 ) -> float:
-    """Compute Surface Electrostatic Exposure, ``sum(q_i * phi_i * SASA_i) / sum(SASA_i)``."""
+    """
+    Compute Surface Electrostatic Exposure.
+    ``sum(q_i * phi_i * SASA_i) / sum(SASA_i)``
+    """
     coords_pqr, charges_pqr, radii_pqr = parse_pqr(pqr_file)
     atom_count = len(coords_pqr)
     if atom_count == 0:
@@ -269,7 +277,8 @@ def calculate_see(
         coords_for_sasa = np.array([atom.coord for atom in atoms_pdb])
         if len(coords_for_sasa) != atom_count:
             raise ValueError(
-                f"PDB atom count ({len(coords_for_sasa)}) != PQR atom count ({atom_count})."
+                f"PDB atom count ({len(coords_for_sasa)}) != PQR atom count "
+                f"({atom_count})."
             )
     else:
         coords_for_sasa = np.array(coords_pqr)
@@ -278,7 +287,11 @@ def calculate_see(
 
     if debug:
         zero_frac = np.mean(sasa == 0.0)
-        warnings.warn(f"Fraction of zero SASA atoms: {zero_frac:.3f}", RuntimeWarning)
+        warnings.warn(
+            f"Fraction of zero SASA atoms: {zero_frac:.3f}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     outside_atoms = atoms_outside_grid_coords(
         coords_for_sasa, origin, spacing, potential_grid.shape
@@ -287,10 +300,18 @@ def calculate_see(
         warnings.warn(
             f"{len(outside_atoms)} atoms are outside the DX grid.",
             RuntimeWarning,
+            stacklevel=2,
         )
 
     atoms = [
-        CustomAtom("X", "RES", "A", str(index + 1), np.array(coords_pqr[index]), float(charges_pqr[index]))
+        CustomAtom(
+            "X",
+            "RES",
+            "A",
+            str(index + 1),
+            np.array(coords_pqr[index]),
+            float(charges_pqr[index]),
+        )
         for index in range(atom_count)
     ]
     potentials = np.array(
@@ -308,7 +329,7 @@ def calculate_surface_potential_fraction(
     dx_file: str | Path,
     threshold: float = 1.0,
 ) -> float:
-    """Return percentage of surface atoms with electrostatic potential above a threshold."""
+    """Return percentage of surface atoms above an electrostatic threshold."""
     coords, charges, _ = parse_pqr(pqr_file)
     sasa_atoms, _, _ = calculate_sasa_from_pqr(pqr_file)
     potential_grid, origin, spacing = parse_dx(dx_file)
@@ -330,7 +351,9 @@ def calculate_surface_potential_fraction(
     return float((above_threshold / len(surface_potentials)) * 100)
 
 
-def calculate_residue_exposed_charge(pqr_file: str | Path, pdb_file: str | Path) -> dict:
+def calculate_residue_exposed_charge(
+    pqr_file: str | Path, pdb_file: str | Path
+) -> dict:
     """Compute residue-level exposed charge using atomic SASA and PQR charges."""
     _, charges, radii = parse_pqr(pqr_file)
     sasa_atoms, _, charges_chk = calculate_sasa_from_pqr(pqr_file)
@@ -349,7 +372,8 @@ def calculate_residue_exposed_charge(pqr_file: str | Path, pdb_file: str | Path)
 
     if len(pdb_atoms) != len(charges):
         raise ValueError(
-            f"PDB atoms ({len(pdb_atoms)}) != PQR atoms ({len(charges)}). Files are inconsistent."
+            f"PDB atoms ({len(pdb_atoms)}) != PQR atoms ({len(charges)}). "
+            "Files are inconsistent."
         )
 
     residues = defaultdict(
@@ -405,7 +429,7 @@ def calculate_residue_exposed_charge(pqr_file: str | Path, pdb_file: str | Path)
 def parse_apbs_energy(log_file: str | Path) -> float | None:
     """Extract a total electrostatic energy value from an APBS log when present."""
     pattern = re.compile(r"Total electrostatic energy\s*=\s*([-+0-9.eE]+)")
-    with open(log_file, "r", encoding="utf-8", errors="ignore") as handle:
+    with open(log_file, encoding="utf-8", errors="ignore") as handle:
         for line in handle:
             match = pattern.search(line)
             if match:
@@ -424,7 +448,7 @@ def process_single_protein(
     Returns the legacy tuple shape. Metrics not implemented in this package version
     are returned as ``N/A`` rather than relying on undefined helper functions.
     """
-    from .electrostatics import generate_apbs_in_fixed, find_dx_file
+    from .electrostatics import find_dx_file, generate_apbs_in_fixed
 
     require_executable("pdb2pqr", "Install PDB2PQR and ensure 'pdb2pqr' is on PATH.")
     require_executable("apbs", "Install APBS and ensure 'apbs' is on PATH.")
@@ -437,10 +461,14 @@ def process_single_protein(
         ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_path), str(pqr_file)],
         check=True,
     )
-    in_path = generate_apbs_in_fixed(pdb_path, pdb_name, bbox_min, bbox_max, resolution=0.75)
+    in_path = generate_apbs_in_fixed(
+        pdb_path, pdb_name, bbox_min, bbox_max, resolution=0.75
+    )
     log_path = Path(f"{pdb_name}.out").resolve()
     with open(log_path, "w", encoding="utf-8") as log_handle:
-        subprocess.run(["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(
+            ["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True
+        )
 
     solvation_energy = parse_apbs_energy(log_path)
     dx_path = find_dx_file(pdb_name)
@@ -453,7 +481,12 @@ def process_single_protein(
 
     aux_dir = Path(aux_output_dir)
     aux_dir.mkdir(parents=True, exist_ok=True)
-    for candidate in [f"{pdb_name}.in", f"{pdb_name}.out", f"{pdb_name}.pqr", str(dx_path)]:
+    for candidate in [
+        f"{pdb_name}.in",
+        f"{pdb_name}.out",
+        f"{pdb_name}.pqr",
+        str(dx_path),
+    ]:
         candidate_path = Path(candidate)
         if candidate_path.exists():
             shutil.move(str(candidate_path), aux_dir / candidate_path.name)

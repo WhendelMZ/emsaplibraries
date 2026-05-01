@@ -33,7 +33,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "build>=1.2",
+  "pre-commit>=3.7",
   "pytest>=8",
+  "ruff>=0.6",
 ]
 
 [project.urls]
@@ -45,3 +47,24 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+exclude = [
+  ".git",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".venv",
+  "build",
+  "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
