@@ -354,21 +354,35 @@ def calculate_surface_potential_fraction(
 def calculate_residue_exposed_charge(
     pqr_file: str | Path, pdb_file: str | Path
 ) -> dict:
-    """Compute residue-level exposed charge using atomic SASA and PQR charges."""
+    """Compute residue-level exposed charge using ECPi logic."""
+
     _, charges, radii = parse_pqr(pqr_file)
+
     sasa_atoms, _, charges_chk = calculate_sasa_from_pqr(pqr_file)
+
     if charges_chk is not None and len(charges_chk) == len(charges):
         charges = charges_chk
 
     structure = _pdb_parser().get_structure("protein", str(pdb_file))
+
     pdb_atoms = []
+
     for model in structure:
         for chain in model:
             for residue in chain:
+
                 if residue.id[0] != " ":
                     continue
-                for _atom in residue:
-                    pdb_atoms.append((residue.resname, residue.id[1], chain.id))
+
+                for atom in residue:
+                    pdb_atoms.append(
+                        (
+                            residue.resname,
+                            residue.id[1],
+                            chain.id,
+                            atom.name,
+                        )
+                    )
 
     if len(pdb_atoms) != len(charges):
         raise ValueError(
@@ -377,65 +391,385 @@ def calculate_residue_exposed_charge(
         )
 
     residues = defaultdict(
-        lambda: {"atom_indices": [], "net_charge": 0.0, "sasa": 0.0, "max_sasa": 0.0}
+        lambda: {
+            "atom_indices": [],
+            "abs_charge": 0.0,
+            "sasa": 0.0,
+            "max_sasa": 0.0,
+            "exposed_charge": 0.0,
+        }
     )
 
-    for index, (resname, resnum, chain) in enumerate(pdb_atoms):
-        key = f"{resname}{resnum}{chain}"
-        residues[key]["atom_indices"].append(index)
-        residues[key]["net_charge"] += float(charges[index])
-        residues[key]["sasa"] += float(sasa_atoms[index])
-        residues[key]["max_sasa"] += 4 * math.pi * (float(radii[index]) ** 2)
-
-    per_residue = []
-    total_charge = 0.0
+    total_abs_charge = 0.0
     total_exposed_charge = 0.0
 
+    for index, (resname, resnum, chain, atom_name) in enumerate(pdb_atoms):
+
+        key = f"{resname}{resnum}{chain}"
+
+        qi = abs(float(charges[index]))
+
+        sasa_i = float(sasa_atoms[index])
+
+        radius_i = float(radii[index])
+
+        sasa_max_i = 4.0 * math.pi * (radius_i ** 2)
+
+        frac_exp = (
+            sasa_i / sasa_max_i
+            if sasa_max_i > 0
+            else 0.0
+        )
+
+        frac_exp = min(1.0, frac_exp)
+
+        exposed_q = qi * frac_exp
+
+        residues[key]["atom_indices"].append(index)
+        residues[key]["abs_charge"] += qi
+        residues[key]["sasa"] += sasa_i
+        residues[key]["max_sasa"] += sasa_max_i
+        residues[key]["exposed_charge"] += exposed_q
+
+        total_abs_charge += qi
+        total_exposed_charge += exposed_q
+
+    per_residue = []
+
     for key, info in residues.items():
-        net_q = info["net_charge"]
-        max_sasa_res = info["max_sasa"]
-        exposure_fraction = info["sasa"] / max_sasa_res if max_sasa_res > 0 else 0.0
-        exposure_fraction = min(1.0, exposure_fraction)
-        exposed_q = net_q * exposure_fraction
+
+        exposure_fraction = (
+            info["exposed_charge"] / info["abs_charge"]
+            if info["abs_charge"] > 1e-12
+            else 0.0
+        )
 
         per_residue.append(
             {
                 "residue": key,
-                "net_charge": net_q,
+                "abs_charge": info["abs_charge"],
                 "sasa": info["sasa"],
-                "max_sasa": max_sasa_res,
+                "max_sasa": info["max_sasa"],
                 "exposure_fraction": exposure_fraction,
-                "exposed_charge": exposed_q,
+                "exposed_charge": info["exposed_charge"],
             }
         )
-        total_charge += net_q
-        total_exposed_charge += exposed_q
 
-    total_abs_charge = np.sum(np.abs(charges))
     percent_exposed_charge = (
-        (total_exposed_charge / total_abs_charge) * 100
+        (total_exposed_charge / total_abs_charge) * 100.0
         if total_abs_charge > 1e-12
         else 0.0
     )
 
+    percent_exposed_charge = min(percent_exposed_charge, 100.0)
+
     return {
-        "total_charge": total_charge,
+        "total_abs_charge": total_abs_charge,
         "total_exposed_charge": total_exposed_charge,
-        "percent_exposed_charge": min(percent_exposed_charge, 100.0),
+        "percent_exposed_charge": percent_exposed_charge,
         "per_residue": per_residue,
     }
 
+kd_scale = {
+    "ALA": 1.8, "ARG": -4.5, "ASN": -3.5, "ASP": -3.5,
+    "CYS": 2.5, "GLN": -3.5, "GLU": -3.5, "GLY": -0.4,
+    "HIS": -3.2, "ILE": 4.5, "LEU": 3.8, "LYS": -3.9,
+    "MET": 1.9, "PHE": 2.8, "PRO": -1.6, "SER": -0.8,
+    "THR": -0.7, "TRP": -0.9, "TYR": -1.3, "VAL": 4.2
+}
 
-def parse_apbs_energy(log_file: str | Path) -> float | None:
-    """Extract a total electrostatic energy value from an APBS log when present."""
-    pattern = re.compile(r"Total electrostatic energy\s*=\s*([-+0-9.eE]+)")
-    with open(log_file, encoding="utf-8", errors="ignore") as handle:
-        for line in handle:
-            match = pattern.search(line)
-            if match:
-                return float(match.group(1))
-    return None
 
+def calculate_hse(pdb_file, pqr_file, dx_file=None):
+    """
+    Computes HSE (Hydrophobic Surface Exposure).
+
+    Keeps compatibility with the previous function signature.
+
+    Returns:
+    --------
+    hse_value : float
+        Final normalized HSE value.
+
+    hydrophobic_exposure : float
+        Hydrophobic contribution term:
+            Σ(KD * SASA)
+
+    electrostatic_exposure : float
+        Placeholder value (not used in this metric).
+    """
+
+    from Bio.PDB import PDBParser
+
+    KD_SCALE = {
+        "ALA": 1.8, "ARG": -4.5, "ASN": -3.5, "ASP": -3.5,
+        "CYS": 2.5, "GLN": -3.5, "GLU": -3.5, "GLY": -0.4,
+        "HIS": -3.2, "ILE": 4.5, "LEU": 3.8, "LYS": -3.9,
+        "MET": 1.9, "PHE": 2.8, "PRO": -1.6, "SER": -0.8,
+        "THR": -0.7, "TRP": -0.9, "TYR": -1.3, "VAL": 4.2
+    }
+
+    # Load structure
+    structure = PDBParser(QUIET=True).get_structure(
+        "protein",
+        pdb_file
+    )
+
+    # Compute atomic SASA
+    sasa_atoms, total_sasa, charges = calculate_sasa_from_pqr(
+        pqr_file
+    )
+
+    residue_sasa = {}
+
+    atom_index = 0
+
+    for model in structure:
+        for chain in model:
+            for residue in chain:
+
+                residue_id = (
+                    chain.id,
+                    residue.id[1],
+                    residue.resname
+                )
+
+                residue_sasa.setdefault(residue_id, 0.0)
+
+                for atom in residue:
+
+                    residue_sasa[residue_id] += sasa_atoms[atom_index]
+
+                    atom_index += 1
+
+    hydrophobic_exposure = 0.0
+
+    total_surface_area = 0.0
+
+    for (
+        chain_id,
+        residue_number,
+        residue_name
+    ), sasa in residue_sasa.items():
+
+        kd_value = KD_SCALE.get(residue_name, 0.0)
+
+        hydrophobic_exposure += kd_value * sasa
+
+        total_surface_area += sasa
+
+    hse_value = (
+        hydrophobic_exposure / total_surface_area
+        if total_surface_area > 0
+        else 0.0
+    )
+
+    # Not used in this metric
+    electrostatic_exposure = 0.0
+
+    return (
+        hse_value,
+        hydrophobic_exposure,
+        electrostatic_exposure
+    )
+
+pka_ref = {
+    "ASP": 3.9,
+    "GLU": 4.3,
+    "HIS": 6.0,
+    "CYS": 8.5,
+    "TYR": 10.1,
+    "LYS": 10.5,
+    "ARG": 12.5
+}
+
+def residue_sasa_from_pqr(pdb_file, pqr_file):
+    # 1. SASA por átomo (radii corretos do PQR)
+    sasa_atoms, _, _ = calculate_sasa_from_pqr(pqr_file)
+
+    # 2. Ler estrutura do PDB para mapear átomos → resíduos
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure("prot", pdb_file)
+
+    residue_sasa = {}
+    atom_index = 0
+
+    for model in structure:
+        for chain in model:
+            for residue in chain:
+                resname = residue.resname
+                resnum = residue.id[1]
+                chain_id = chain.id
+
+                key = f"{resname}{resnum}{chain_id}"
+
+                area = 0.0
+                for atom in residue:
+                    area += sasa_atoms[atom_index]
+                    atom_index += 1
+
+                residue_sasa[key] = area
+
+    return residue_sasa
+
+import subprocess, os, re
+
+def run_propka(pdb_file):
+    pdb_base = os.path.basename(pdb_file)
+    out = os.path.splitext(pdb_base)[0] + ".pka"
+    out_file = os.path.join("/content", out)
+
+    subprocess.run(["propka3", pdb_file], check=True)
+
+    results = {}
+    with open(out_file, "r") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+
+            resname = parts[0]
+            resnum = parts[1]
+            chain   = parts[2]
+
+            try:
+                pka_val = float(parts[3])
+            except:
+                continue
+
+            key = f"{resname}{resnum}{chain}"
+            results[key] = pka_val
+
+    return results
+
+SASA_MAX = {
+    "ASP": 110.0, "GLU": 140.0,
+    "HIS": 160.0, "CYS": 135.0,
+    "TYR": 230.0, "LYS": 200.0,
+    "ARG": 225.0
+}
+
+def calculate_pka_by_sasa(pdb_file, pqr_file):
+    pkaI = run_propka(pdb_file)
+    res_sasa = residue_sasa_from_pqr(pdb_file, pqr_file)
+
+    results = {}
+
+    for key, pka_val in pkaI.items():
+        m = re.match(r"([A-Z]{3})(\d+)([A-Z])", key)
+        if not m:
+            continue
+
+        resname = m.group(1)
+
+        if resname not in SASA_MAX:
+            continue
+        if key not in res_sasa:
+            continue
+
+        sasa_res = res_sasa[key]
+        frac_exp = min(1.0, sasa_res / SASA_MAX[resname])
+
+        pka_sasa = frac_exp * pka_val
+
+        results[key] = (pka_val, frac_exp, pka_sasa)
+
+    return results
+
+def calculate_protein_pka_sasa(pdb_file, pqr_file):
+    residues = calculate_pka_by_sasa(pdb_file, pqr_file)
+
+    if not residues:
+        return 0.0
+
+    return sum(v[2] for v in residues.values()) / len(residues)
+
+def acid_base_stability_estimator(
+    pdb_file,
+    pqr_file
+):
+    """
+    Computes the electrostatic stability estimator (ΔG)
+    using PROPKA-derived pKa values and SASA exposure.
+
+    The electrostatic free energy contribution is calculated as:
+
+        ΔG = 2.303 * R * T * (pKa_eff - pKa_ref)
+
+    Only residues with sufficient solvent exposure
+    (relative exposure ≥ 0.20) are considered.
+
+    Returns
+    -------
+    float
+        Mean electrostatic contribution in kJ/mol.
+    """
+
+    reference_pka = {
+        "ASP": 3.9,
+        "GLU": 4.3,
+        "HIS": 6.0,
+        "CYS": 8.3,
+        "TYR": 10.1,
+        "LYS": 10.5,
+        "ARG": 12.5
+    }
+
+    # Compute SASA-weighted pKa values
+    pka_results = calculate_pka_weighted_by_sasa(
+        pdb_file,
+        pqr_file
+    )
+
+    if not pka_results:
+        return 0.0
+
+    delta_g_values = []
+
+    for residue_key, (
+        effective_pka,
+        exposure_fraction,
+        _
+    ) in pka_results.items():
+
+        match = re.match(
+            r"([A-Z]{3})\d+[A-Z]",
+            residue_key
+        )
+
+        if not match:
+            continue
+
+        residue_name = match.group(1)
+
+        if residue_name not in reference_pka:
+            continue
+
+        # ΔpKa
+        delta_pka = (
+            effective_pka
+            - reference_pka[residue_name]
+        )
+
+        # Electrostatic free energy (J/mol)
+        delta_g = (
+            2.303
+            * R
+            * T
+            * delta_pka
+        )
+
+        # Consider only solvent-exposed residues
+        if exposure_fraction >= 0.20:
+            delta_g_values.append(delta_g)
+
+    if not delta_g_values:
+        return 0.0
+
+    # Convert to kJ/mol
+    return (
+        sum(delta_g_values)
+        / len(delta_g_values)
+    ) / 1000.0
 
 def process_single_protein(
     pdb_file: str | Path,
@@ -470,22 +804,38 @@ def process_single_protein(
             ["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True
         )
 
-    solvation_energy = parse_apbs_energy(log_path)
     dx_path = find_dx_file(pdb_name)
 
     p_sasa, _, _ = calculate_p_sasa(pqr_file, pdb_path, dx_path)
     q_sasa, _, _ = calculate_q_sasa(pqr_file)
     ecpi_data = calculate_residue_exposed_charge(pqr_file, pdb_path)
     see_val = calculate_see(pqr_file, dx_path)
-    surface_potential_percent = calculate_surface_potential_fraction(pqr_file, dx_path)
+    pkaI_val = calculate_protein_pka_sasa(pdb_file, pqr_file)
+    hse_val, _, _ = calculate_hse(pdb_file, pqr_file)
+    abse_val = acid_base_stability_estimator(pdb_file, pqr_file)
+
+    # --- Print summary ---
+    print(f"✅ Protein: {pdb_name}")
+    print(f" Solvent-Accessible Surface Potential - P_SASA (kBT/e): {p_sasa:.2f}")
+    print(f" Solvent-Accessible Surface Charge - Q_SASA (e): {q_sasa:.2f}")
+    print(f" Exposed Charge Percentage Index - ECPi (% e): {ecpi_data['percent_exposed_charge']:.2f}")
+    print(f" Surface Electrostatic Energy - SEE (kBT): {see_val:.2f}")
+    print(f" Hydrophobic Surface Exposure - HSE (dimensionless): {hse_val:.2f}")
+    print(f" pKa Index of Ionizable Residue Groups - pKaI (dimensionless): {pkaI_val:.2f}")
+    print(f" Acid-Base Stability Estimator - ABSE (kJ/mol): {abse_val:.2f}")
+
+    #it will be used for testing
+    #surface_potential_percent = calculate_surface_potential_fraction(pqr_file, dx_path)
 
     aux_dir = Path(aux_output_dir)
     aux_dir.mkdir(parents=True, exist_ok=True)
     for candidate in [
         f"{pdb_name}.in",
         f"{pdb_name}.out",
+        f"{pdb_name}.pka",
         f"{pdb_name}.pqr",
         str(dx_path),
+        f"{pdb_name}-input.p"
     ]:
         candidate_path = Path(candidate)
         if candidate_path.exists():
@@ -493,13 +843,12 @@ def process_single_protein(
 
     return (
         pdb_name,
-        f"{p_sasa:.4f}",
-        f"{q_sasa:.4f}",
-        f"{ecpi_data['percent_exposed_charge']:.4f}",
-        f"{see_val:.4f}",
-        "N/A",
-        "N/A",
-        "N/A",
-        f"{solvation_energy:.4f}" if solvation_energy is not None else "N/A",
-        f"{surface_potential_percent:.4f}",
+        f"{p_sasa:.2f}",
+        f"{q_sasa:.2f}",
+        f"{ecpi_data['percent_exposed_charge']:.2f}",
+        f"{see_val:.2f}",
+        f"{hse_val:.2f}",
+        f"{pkaI_val:.2f}",
+        f"{abse_val:.2f}",
+        #f"{surface_potential_percent:.2f}",
     )
