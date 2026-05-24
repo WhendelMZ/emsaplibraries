@@ -404,7 +404,7 @@ def calculate_residue_exposed_charge(
     total_abs_charge = 0.0
     total_exposed_charge = 0.0
 
-    for index, (resname, resnum, chain, atom_name) in enumerate(pdb_atoms):
+    for index, (resname, resnum, chain, _atom_name) in enumerate(pdb_atoms):
         key = f"{resname}{resnum}{chain}"
 
         qi = abs(float(charges[index]))
@@ -527,7 +527,7 @@ def calculate_hse(
 
                 residue_sasa.setdefault(residue_id, 0.0)
 
-                for atom in residue:
+                for _atom in residue:
                     residue_sasa[residue_id] += sasa_atoms[atom_index]
 
                     atom_index += 1
@@ -536,7 +536,7 @@ def calculate_hse(
 
     total_surface_area = 0.0
 
-    for (chain_id, residue_number, residue_name), sasa in residue_sasa.items():
+    for (_chain_id, _residue_number, residue_name), sasa in residue_sasa.items():
         kd_value = kd_scale.get(residue_name, 0.0)
 
         hydrophobic_exposure += kd_value * sasa
@@ -585,7 +585,7 @@ def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
                 key = f"{resname}{resnum}{chain_id}"
 
                 area = 0.0
-                for atom in residue:
+                for _atom in residue:
                     area += sasa_atoms[atom_index]
                     atom_index += 1
 
@@ -614,7 +614,7 @@ def run_propka(pdb_file):
 
             try:
                 pka_val = float(parts[3])
-            except:
+            except (TypeError, ValueError):
                 continue
 
             key = f"{resname}{resnum}{chain}"
@@ -784,18 +784,13 @@ def process_single_protein(
     print(f"✅ Protein: {pdb_name}")
     print(f" Solvent-Accessible Surface Potential - P_SASA (kBT/e): {p_sasa:.2f}")
     print(f" Solvent-Accessible Surface Charge - Q_SASA (e): {q_sasa:.2f}")
-    print(
-        f" Exposed Charge Percentage Index - ECPi (% e): {ecpi_data['percent_exposed_charge']:.2f}"
-    )
+    print(f" Exposed Charge % Index : {ecpi_data['percent_exposed_charge']:.2f}")
     print(f" Surface Electrostatic Energy - SEE (kBT): {see_val:.2f}")
     print(f" Hydrophobic Surface Exposure - HSE (dimensionless): {hse_val:.2f}")
     print(
         f" pKa Index of Ionizable Residue Groups - pKaI (dimensionless): {pkaI_val:.2f}"
     )
     print(f" Acid-Base Stability Estimator - ABSE (kJ/mol): {abse_val:.2f}")
-
-    # it will be used for testing
-    # surface_potential_percent = calculate_surface_potential_fraction(pqr_file, dx_path)
 
     aux_dir = Path(aux_output_dir)
     aux_dir.mkdir(parents=True, exist_ok=True)
