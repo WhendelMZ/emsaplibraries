@@ -15,6 +15,9 @@ import numpy as np
 
 from ._runtime import require_executable, require_module
 
+from Bio.PDB.PDBParser import PDBParser
+import subprocess, os, re
+
 
 @dataclass
 class CustomAtom:
@@ -470,16 +473,8 @@ def calculate_residue_exposed_charge(
         "per_residue": per_residue,
     }
 
-kd_scale = {
-    "ALA": 1.8, "ARG": -4.5, "ASN": -3.5, "ASP": -3.5,
-    "CYS": 2.5, "GLN": -3.5, "GLU": -3.5, "GLY": -0.4,
-    "HIS": -3.2, "ILE": 4.5, "LEU": 3.8, "LYS": -3.9,
-    "MET": 1.9, "PHE": 2.8, "PRO": -1.6, "SER": -0.8,
-    "THR": -0.7, "TRP": -0.9, "TYR": -1.3, "VAL": 4.2
-}
-
-
-def calculate_hse(pdb_file, pqr_file, dx_file=None):
+def calculate_hse(pdb_file: str | Path,
+                pqr_file: str | Path) -> tuple[float, float, float]:
     """
     Computes HSE (Hydrophobic Surface Exposure).
 
@@ -498,9 +493,8 @@ def calculate_hse(pdb_file, pqr_file, dx_file=None):
         Placeholder value (not used in this metric).
     """
 
-    from Bio.PDB import PDBParser
 
-    KD_SCALE = {
+    kd_scale = {
         "ALA": 1.8, "ARG": -4.5, "ASN": -3.5, "ASP": -3.5,
         "CYS": 2.5, "GLN": -3.5, "GLU": -3.5, "GLY": -0.4,
         "HIS": -3.2, "ILE": 4.5, "LEU": 3.8, "LYS": -3.9,
@@ -551,7 +545,7 @@ def calculate_hse(pdb_file, pqr_file, dx_file=None):
         residue_name
     ), sasa in residue_sasa.items():
 
-        kd_value = KD_SCALE.get(residue_name, 0.0)
+        kd_value = kd_scale.get(residue_name, 0.0)
 
         hydrophobic_exposure += kd_value * sasa
 
@@ -582,11 +576,11 @@ pka_ref = {
     "ARG": 12.5
 }
 
-def residue_sasa_from_pqr(pdb_file, pqr_file):
-    # 1. SASA por átomo (radii corretos do PQR)
+def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
+    # 1. SASA per atom (correct PQR radii)
     sasa_atoms, _, _ = calculate_sasa_from_pqr(pqr_file)
 
-    # 2. Ler estrutura do PDB para mapear átomos → resíduos
+    # 2. Read structure from PDB to map atoms → residues
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("prot", pdb_file)
 
@@ -611,7 +605,6 @@ def residue_sasa_from_pqr(pdb_file, pqr_file):
 
     return residue_sasa
 
-import subprocess, os, re
 
 def run_propka(pdb_file):
     pdb_base = os.path.basename(pdb_file)
@@ -648,7 +641,9 @@ SASA_MAX = {
     "ARG": 225.0
 }
 
-def calculate_pka_by_sasa(pdb_file, pqr_file):
+def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
+    """Calculate pKa values weighted by solvent exposure."""
+
     pkaI = run_propka(pdb_file)
     res_sasa = residue_sasa_from_pqr(pdb_file, pqr_file)
 
@@ -684,9 +679,9 @@ def calculate_protein_pka_sasa(pdb_file, pqr_file):
     return sum(v[2] for v in residues.values()) / len(residues)
 
 def acid_base_stability_estimator(
-    pdb_file,
-    pqr_file
-):
+    pdb_file: str | Path,
+    pqr_file: str | Path
+) -> float:
     """
     Computes the electrostatic stability estimator (ΔG)
     using PROPKA-derived pKa values and SASA exposure.
