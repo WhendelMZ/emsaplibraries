@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -12,11 +13,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
+from Bio.PDB.PDBParser import PDBParser
 
 from ._runtime import require_executable, require_module
-
-from Bio.PDB.PDBParser import PDBParser
-import subprocess, os, re
 
 
 @dataclass
@@ -373,7 +372,6 @@ def calculate_residue_exposed_charge(
     for model in structure:
         for chain in model:
             for residue in chain:
-
                 if residue.id[0] != " ":
                     continue
 
@@ -407,7 +405,6 @@ def calculate_residue_exposed_charge(
     total_exposed_charge = 0.0
 
     for index, (resname, resnum, chain, atom_name) in enumerate(pdb_atoms):
-
         key = f"{resname}{resnum}{chain}"
 
         qi = abs(float(charges[index]))
@@ -416,13 +413,9 @@ def calculate_residue_exposed_charge(
 
         radius_i = float(radii[index])
 
-        sasa_max_i = 4.0 * math.pi * (radius_i ** 2)
+        sasa_max_i = 4.0 * math.pi * (radius_i**2)
 
-        frac_exp = (
-            sasa_i / sasa_max_i
-            if sasa_max_i > 0
-            else 0.0
-        )
+        frac_exp = sasa_i / sasa_max_i if sasa_max_i > 0 else 0.0
 
         frac_exp = min(1.0, frac_exp)
 
@@ -440,7 +433,6 @@ def calculate_residue_exposed_charge(
     per_residue = []
 
     for key, info in residues.items():
-
         exposure_fraction = (
             info["exposed_charge"] / info["abs_charge"]
             if info["abs_charge"] > 1e-12
@@ -473,8 +465,10 @@ def calculate_residue_exposed_charge(
         "per_residue": per_residue,
     }
 
-def calculate_hse(pdb_file: str | Path,
-                pqr_file: str | Path) -> tuple[float, float, float]:
+
+def calculate_hse(
+    pdb_file: str | Path, pqr_file: str | Path
+) -> tuple[float, float, float]:
     """
     Computes HSE (Hydrophobic Surface Exposure).
 
@@ -493,25 +487,34 @@ def calculate_hse(pdb_file: str | Path,
         Placeholder value (not used in this metric).
     """
 
-
     kd_scale = {
-        "ALA": 1.8, "ARG": -4.5, "ASN": -3.5, "ASP": -3.5,
-        "CYS": 2.5, "GLN": -3.5, "GLU": -3.5, "GLY": -0.4,
-        "HIS": -3.2, "ILE": 4.5, "LEU": 3.8, "LYS": -3.9,
-        "MET": 1.9, "PHE": 2.8, "PRO": -1.6, "SER": -0.8,
-        "THR": -0.7, "TRP": -0.9, "TYR": -1.3, "VAL": 4.2
+        "ALA": 1.8,
+        "ARG": -4.5,
+        "ASN": -3.5,
+        "ASP": -3.5,
+        "CYS": 2.5,
+        "GLN": -3.5,
+        "GLU": -3.5,
+        "GLY": -0.4,
+        "HIS": -3.2,
+        "ILE": 4.5,
+        "LEU": 3.8,
+        "LYS": -3.9,
+        "MET": 1.9,
+        "PHE": 2.8,
+        "PRO": -1.6,
+        "SER": -0.8,
+        "THR": -0.7,
+        "TRP": -0.9,
+        "TYR": -1.3,
+        "VAL": 4.2,
     }
 
     # Load structure
-    structure = PDBParser(QUIET=True).get_structure(
-        "protein",
-        pdb_file
-    )
+    structure = PDBParser(QUIET=True).get_structure("protein", pdb_file)
 
     # Compute atomic SASA
-    sasa_atoms, total_sasa, charges = calculate_sasa_from_pqr(
-        pqr_file
-    )
+    sasa_atoms, total_sasa, charges = calculate_sasa_from_pqr(pqr_file)
 
     residue_sasa = {}
 
@@ -520,17 +523,11 @@ def calculate_hse(pdb_file: str | Path,
     for model in structure:
         for chain in model:
             for residue in chain:
-
-                residue_id = (
-                    chain.id,
-                    residue.id[1],
-                    residue.resname
-                )
+                residue_id = (chain.id, residue.id[1], residue.resname)
 
                 residue_sasa.setdefault(residue_id, 0.0)
 
                 for atom in residue:
-
                     residue_sasa[residue_id] += sasa_atoms[atom_index]
 
                     atom_index += 1
@@ -539,12 +536,7 @@ def calculate_hse(pdb_file: str | Path,
 
     total_surface_area = 0.0
 
-    for (
-        chain_id,
-        residue_number,
-        residue_name
-    ), sasa in residue_sasa.items():
-
+    for (chain_id, residue_number, residue_name), sasa in residue_sasa.items():
         kd_value = kd_scale.get(residue_name, 0.0)
 
         hydrophobic_exposure += kd_value * sasa
@@ -552,19 +544,14 @@ def calculate_hse(pdb_file: str | Path,
         total_surface_area += sasa
 
     hse_value = (
-        hydrophobic_exposure / total_surface_area
-        if total_surface_area > 0
-        else 0.0
+        hydrophobic_exposure / total_surface_area if total_surface_area > 0 else 0.0
     )
 
     # Not used in this metric
     electrostatic_exposure = 0.0
 
-    return (
-        hse_value,
-        hydrophobic_exposure,
-        electrostatic_exposure
-    )
+    return (hse_value, hydrophobic_exposure, electrostatic_exposure)
+
 
 pka_ref = {
     "ASP": 3.9,
@@ -573,8 +560,9 @@ pka_ref = {
     "CYS": 8.5,
     "TYR": 10.1,
     "LYS": 10.5,
-    "ARG": 12.5
+    "ARG": 12.5,
 }
+
 
 def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     # 1. SASA per atom (correct PQR radii)
@@ -614,7 +602,7 @@ def run_propka(pdb_file):
     subprocess.run(["propka3", pdb_file], check=True)
 
     results = {}
-    with open(out_file, "r") as f:
+    with open(out_file) as f:
         for line in f:
             parts = line.split()
             if len(parts) < 4:
@@ -622,7 +610,7 @@ def run_propka(pdb_file):
 
             resname = parts[0]
             resnum = parts[1]
-            chain   = parts[2]
+            chain = parts[2]
 
             try:
                 pka_val = float(parts[3])
@@ -634,12 +622,17 @@ def run_propka(pdb_file):
 
     return results
 
+
 SASA_MAX = {
-    "ASP": 110.0, "GLU": 140.0,
-    "HIS": 160.0, "CYS": 135.0,
-    "TYR": 230.0, "LYS": 200.0,
-    "ARG": 225.0
+    "ASP": 110.0,
+    "GLU": 140.0,
+    "HIS": 160.0,
+    "CYS": 135.0,
+    "TYR": 230.0,
+    "LYS": 200.0,
+    "ARG": 225.0,
 }
+
 
 def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     """Calculate pKa values weighted by solvent exposure."""
@@ -670,6 +663,7 @@ def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
 
     return results
 
+
 def calculate_protein_pka_sasa(pdb_file, pqr_file):
     residues = calculate_pka_by_sasa(pdb_file, pqr_file)
 
@@ -678,10 +672,8 @@ def calculate_protein_pka_sasa(pdb_file, pqr_file):
 
     return sum(v[2] for v in residues.values()) / len(residues)
 
-def acid_base_stability_estimator(
-    pdb_file: str | Path,
-    pqr_file: str | Path
-) -> float:
+
+def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) -> float:
     """
     Computes the electrostatic stability estimator (ΔG)
     using PROPKA-derived pKa values and SASA exposure.
@@ -706,30 +698,19 @@ def acid_base_stability_estimator(
         "CYS": 8.3,
         "TYR": 10.1,
         "LYS": 10.5,
-        "ARG": 12.5
+        "ARG": 12.5,
     }
 
     # Compute SASA-weighted pKa values
-    pka_results = calculate_pka_weighted_by_sasa(
-        pdb_file,
-        pqr_file
-    )
+    pka_results = calculate_pka_weighted_by_sasa(pdb_file, pqr_file)
 
     if not pka_results:
         return 0.0
 
     delta_g_values = []
 
-    for residue_key, (
-        effective_pka,
-        exposure_fraction,
-        _
-    ) in pka_results.items():
-
-        match = re.match(
-            r"([A-Z]{3})\d+[A-Z]",
-            residue_key
-        )
+    for residue_key, (effective_pka, exposure_fraction, _) in pka_results.items():
+        match = re.match(r"([A-Z]{3})\d+[A-Z]", residue_key)
 
         if not match:
             continue
@@ -740,18 +721,10 @@ def acid_base_stability_estimator(
             continue
 
         # ΔpKa
-        delta_pka = (
-            effective_pka
-            - reference_pka[residue_name]
-        )
+        delta_pka = effective_pka - reference_pka[residue_name]
 
         # Electrostatic free energy (J/mol)
-        delta_g = (
-            2.303
-            * R
-            * T
-            * delta_pka
-        )
+        delta_g = 2.303 * R * T * delta_pka
 
         # Consider only solvent-exposed residues
         if exposure_fraction >= 0.20:
@@ -761,10 +734,8 @@ def acid_base_stability_estimator(
         return 0.0
 
     # Convert to kJ/mol
-    return (
-        sum(delta_g_values)
-        / len(delta_g_values)
-    ) / 1000.0
+    return (sum(delta_g_values) / len(delta_g_values)) / 1000.0
+
 
 def process_single_protein(
     pdb_file: str | Path,
@@ -813,14 +784,18 @@ def process_single_protein(
     print(f"✅ Protein: {pdb_name}")
     print(f" Solvent-Accessible Surface Potential - P_SASA (kBT/e): {p_sasa:.2f}")
     print(f" Solvent-Accessible Surface Charge - Q_SASA (e): {q_sasa:.2f}")
-    print(f" Exposed Charge Percentage Index - ECPi (% e): {ecpi_data['percent_exposed_charge']:.2f}")
+    print(
+        f" Exposed Charge Percentage Index - ECPi (% e): {ecpi_data['percent_exposed_charge']:.2f}"
+    )
     print(f" Surface Electrostatic Energy - SEE (kBT): {see_val:.2f}")
     print(f" Hydrophobic Surface Exposure - HSE (dimensionless): {hse_val:.2f}")
-    print(f" pKa Index of Ionizable Residue Groups - pKaI (dimensionless): {pkaI_val:.2f}")
+    print(
+        f" pKa Index of Ionizable Residue Groups - pKaI (dimensionless): {pkaI_val:.2f}"
+    )
     print(f" Acid-Base Stability Estimator - ABSE (kJ/mol): {abse_val:.2f}")
 
-    #it will be used for testing
-    #surface_potential_percent = calculate_surface_potential_fraction(pqr_file, dx_path)
+    # it will be used for testing
+    # surface_potential_percent = calculate_surface_potential_fraction(pqr_file, dx_path)
 
     aux_dir = Path(aux_output_dir)
     aux_dir.mkdir(parents=True, exist_ok=True)
@@ -830,7 +805,7 @@ def process_single_protein(
         f"{pdb_name}.pka",
         f"{pdb_name}.pqr",
         str(dx_path),
-        f"{pdb_name}-input.p"
+        f"{pdb_name}-input.p",
     ]:
         candidate_path = Path(candidate)
         if candidate_path.exists():
@@ -845,5 +820,5 @@ def process_single_protein(
         f"{hse_val:.2f}",
         f"{pkaI_val:.2f}",
         f"{abse_val:.2f}",
-        #f"{surface_potential_percent:.2f}",
+        # f"{surface_potential_percent:.2f}",
     )
