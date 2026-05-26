@@ -10,13 +10,7 @@ from pathlib import Path
 from ._runtime import require_executable
 from .electrostatics import find_dx_file, generate_apbs_in_fixed
 from .indicators import (
-    acid_base_stability_estimator,
-    calculate_hse,
-    calculate_p_sasa,
-    calculate_protein_pka_sasa,
-    calculate_q_sasa,
-    calculate_residue_exposed_charge,
-    calculate_see,
+    calculate_protein_metrics,
 )
 
 
@@ -137,14 +131,8 @@ def process_single_protein(
 
     dx_path = Path(find_dx_file(pdb_name))
 
-    p_sasa, _, _ = calculate_p_sasa(pqr_file, pdb_path, dx_path)
-    q_sasa, _, _ = calculate_q_sasa(pqr_file)
-    ecpi_data = calculate_residue_exposed_charge(pqr_file, pdb_path)
-    see_val = calculate_see(pqr_file, dx_path)
     pka_file = _run_propka(pdb_path)
-    pka_sasa_val = calculate_protein_pka_sasa(pdb_file, pqr_file, pka_file)
-    hse_val, _, _ = calculate_hse(pdb_file, pqr_file)
-    abse_val = acid_base_stability_estimator(pdb_file, pqr_file, pka_file)
+    metrics = calculate_protein_metrics(pdb_path, pqr_file, dx_path, pka_file)
 
     # safely move generated files to the aux output directory, if they exist, and
     # update paths accordingly
@@ -159,13 +147,13 @@ def process_single_protein(
 
     result = ProteinPipelineResult(
         protein_name=pdb_name,
-        p_sasa=float(p_sasa),
-        q_sasa=float(q_sasa),
-        ecpi_percent=float(ecpi_data["percent_exposed_charge"]),
-        see=float(see_val),
-        hse=float(hse_val),
-        pka_sasa=float(pka_sasa_val),
-        abse=float(abse_val),
+        p_sasa=metrics.p_sasa,
+        q_sasa=metrics.q_sasa,
+        ecpi_percent=metrics.ecpi_percent,
+        see=metrics.see,
+        hse=metrics.hse,
+        pka_sasa=float(metrics.pka_sasa) if metrics.pka_sasa is not None else 0.0,
+        abse=float(metrics.abse) if metrics.abse is not None else 0.0,
         pdb_file=pdb_path,
         pqr_file=moved_pqr,
         dx_file=moved_dx,

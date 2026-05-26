@@ -28,6 +28,51 @@ class CustomAtom:
     potential: float = 0.0
 
 
+@dataclass
+class ProteinMetricsResult:
+    """Artifact-based metrics for one protein."""
+
+    protein_name: str
+    pdb_file: Path
+    pqr_file: Path
+    dx_file: Path
+    pka_file: Path | None
+    p_sasa: float
+    q_sasa: float
+    ecpi_percent: float
+    see: float
+    hse: float
+    pka_sasa: float | None
+    abse: float | None
+    p_sasa_numerator: float
+    p_sasa_denominator: float
+    q_sasa_numerator: float
+    q_sasa_total_sasa: float
+    ecpi_data: dict
+
+    def as_dict(self) -> dict:
+        """Return a JSON-friendly representation of the metrics and artifacts."""
+        return {
+            "protein_name": self.protein_name,
+            "pdb_file": str(self.pdb_file),
+            "pqr_file": str(self.pqr_file),
+            "dx_file": str(self.dx_file),
+            "pka_file": str(self.pka_file) if self.pka_file is not None else None,
+            "p_sasa": self.p_sasa,
+            "q_sasa": self.q_sasa,
+            "ecpi_percent": self.ecpi_percent,
+            "see": self.see,
+            "hse": self.hse,
+            "pka_sasa": self.pka_sasa,
+            "abse": self.abse,
+            "p_sasa_numerator": self.p_sasa_numerator,
+            "p_sasa_denominator": self.p_sasa_denominator,
+            "q_sasa_numerator": self.q_sasa_numerator,
+            "q_sasa_total_sasa": self.q_sasa_total_sasa,
+            "ecpi_data": self.ecpi_data,
+        }
+
+
 def _freesasa():
     return require_module("freesasa", "pip install freesasa")
 
@@ -743,3 +788,48 @@ def acid_base_stability_estimator(
 
     # Convert to kJ/mol
     return (sum(delta_g_values) / len(delta_g_values)) / 1000.0
+
+
+def calculate_protein_metrics(
+    pdb_file: str | Path,
+    pqr_file: str | Path,
+    dx_file: str | Path,
+    pka_file: str | Path | None = None,
+) -> ProteinMetricsResult:
+    """Calculate all available metrics from existing artifact files."""
+    pdb_path = Path(pdb_file)
+    pqr_path = Path(pqr_file)
+    dx_path = Path(dx_file)
+    pka_path = Path(pka_file) if pka_file is not None else None
+
+    p_sasa, p_num, p_den = calculate_p_sasa(pqr_path, pdb_path, dx_path)
+    q_sasa, q_num, q_total_sasa = calculate_q_sasa(pqr_path)
+    ecpi_data = calculate_residue_exposed_charge(pqr_path, pdb_path)
+    see = calculate_see(pqr_path, dx_path)
+    hse, _, _ = calculate_hse(pdb_path, pqr_path)
+
+    pka_sasa = None
+    abse = None
+    if pka_path is not None:
+        pka_sasa = calculate_protein_pka_sasa(pdb_path, pqr_path, pka_path)
+        abse = acid_base_stability_estimator(pdb_path, pqr_path, pka_path)
+
+    return ProteinMetricsResult(
+        protein_name=pdb_path.stem,
+        pdb_file=pdb_path,
+        pqr_file=pqr_path,
+        dx_file=dx_path,
+        pka_file=pka_path,
+        p_sasa=float(p_sasa),
+        q_sasa=float(q_sasa),
+        ecpi_percent=float(ecpi_data["percent_exposed_charge"]),
+        see=float(see),
+        hse=float(hse),
+        pka_sasa=float(pka_sasa) if pka_sasa is not None else None,
+        abse=float(abse) if abse is not None else None,
+        p_sasa_numerator=float(p_num),
+        p_sasa_denominator=float(p_den),
+        q_sasa_numerator=float(q_num),
+        q_sasa_total_sasa=float(q_total_sasa),
+        ecpi_data=ecpi_data,
+    )

@@ -2,10 +2,19 @@
 
 `emsaplibraries` is an import-first Python package for protein sequence preprocessing, structure handling, electrostatic simulation helpers, and protein indicator calculations.
 
-The main public API is the indicator module. Indicator functions are artifact consumers: they calculate metrics from existing PDB, PQR, DX, and related files rather than owning a full workflow engine. Common indicator functions are also exported from the package root:
+The main public API is artifact-based: core functions calculate metrics from existing PDB, PQR, DX, and optional PKA files rather than owning a full workflow engine. The preferred entry point for scripts and Nextflow tasks is exported from the package root:
 
 ```python
-from emsaplibraries import calculate_q_sasa, calculate_p_sasa, calculate_see
+from emsaplibraries import calculate_protein_metrics
+
+metrics = calculate_protein_metrics(
+    pdb_file="protein.pdb",
+    pqr_file="protein.pqr",
+    dx_file="protein.dx",
+    pka_file="protein.pka",
+)
+
+print(metrics.as_dict())
 ```
 
 ## Installation
@@ -40,9 +49,11 @@ Some helper functions call external command-line tools. The package imports with
 - `run_mafft` requires `mafft`
 - `run_pdb2pqr` and `pipeline.process_single_protein` require `pdb2pqr`
 - `run_apbs` and `pipeline.process_single_protein` require `apbs`
+- `pipeline.process_single_protein` requires `propka3`
 
+The package root does not expose workflow orchestration. Import pipeline helpers explicitly from `emsaplibraries.pipeline`.
 
-## Indicator Examples
+## Indicator Helpers
 
 ```python
 from emsaplibraries import (
@@ -58,12 +69,14 @@ see = calculate_see("protein.pqr", "protein.dx")
 charge = calculate_residue_exposed_charge("protein.pqr", "protein.pdb")
 ```
 
+These lower-level helpers are useful when a script only needs one metric or needs supporting values such as numerator and denominator terms.
+
 Input expectations:
 
 - PQR files must contain ATOM/HETATM rows with coordinates, charge, and radius in the final columns.
 - DX files must contain APBS/OpenDX-style grid metadata and potential values.
 - PDB files are used for atom and residue metadata when an indicator needs residue-level or PDB-coordinate mapping.
-- pKa and ABSE functions require a precomputed PROPKA `.pka` file;
+- pKa and ABSE functions require a precomputed PROPKA `.pka` file.
 
 ## Pipeline Helpers
 
@@ -83,7 +96,7 @@ print(result.p_sasa)
 print(result.as_legacy_tuple())
 ```
 
-`process_single_protein` still runs PDB2PQR, APBS, and PROPKA internally for convenience, calculates the available metrics, moves intermediate artifacts into the auxiliary output directory, and returns a typed result object. The old `from emsaplibraries import process_single_protein` import remains temporarily available with a deprecation warning.
+`process_single_protein` still runs PDB2PQR, APBS, and PROPKA internally for convenience, calculates the available metrics, moves intermediate artifacts into the auxiliary output directory, and returns a typed result object.
 
 ## Public Modules
 
