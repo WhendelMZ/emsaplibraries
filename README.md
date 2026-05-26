@@ -2,7 +2,7 @@
 
 `emsaplibraries` is an import-first Python package for protein sequence preprocessing, structure handling, electrostatic simulation helpers, and protein indicator calculations.
 
-The main public API is the indicator module. Common indicator functions are also exported from the package root:
+The main public API is the indicator module. Indicator functions are artifact consumers: they calculate metrics from existing PDB, PQR, DX, and related files rather than owning a full workflow engine. Common indicator functions are also exported from the package root:
 
 ```python
 from emsaplibraries import calculate_q_sasa, calculate_p_sasa, calculate_see
@@ -35,11 +35,12 @@ PyRosetta itself has licensing and distribution requirements. Install it accordi
 
 ## External Tool Requirements
 
-Some public functions call external command-line tools. The package imports without these tools, and checks for them only when tool-dependent functions are called.
+Some helper functions call external command-line tools. The package imports without these tools, and checks for them only when tool-dependent functions are called.
 
 - `run_mafft` requires `mafft`
-- `run_pdb2pqr` and `process_single_protein` require `pdb2pqr`
-- `run_apbs` and `process_single_protein` require `apbs`
+- `run_pdb2pqr` and `pipeline.process_single_protein` require `pdb2pqr`
+- `run_apbs` and `pipeline.process_single_protein` require `apbs`
+
 
 ## Indicator Examples
 
@@ -63,10 +64,31 @@ Input expectations:
 - DX files must contain APBS/OpenDX-style grid metadata and potential values.
 - PDB files are used for atom and residue metadata when an indicator needs residue-level or PDB-coordinate mapping.
 
+## Pipeline Helpers
+
+Whole-protein orchestration helpers live in the pipeline module:
+
+```python
+from emsaplibraries.pipeline import process_single_protein
+
+result = process_single_protein(
+    "protein.pdb",
+    "auxiliary-output",
+    bbox_min=[0, 0, 0],
+    bbox_max=[100, 100, 100],
+)
+
+print(result.p_sasa)
+print(result.as_legacy_tuple())
+```
+
+`process_single_protein` still runs PDB2PQR and APBS internally for convenience, calculates the available metrics, moves intermediate artifacts into the auxiliary output directory, and returns a typed result object. The old `from emsaplibraries import process_single_protein` import remains temporarily available with a deprecation warning.
+
 ## Public Modules
 
 ```python
 import emsaplibraries.indicators
+import emsaplibraries.pipeline
 import emsaplibraries.electrostatics
 import emsaplibraries.preprocessing
 import emsaplibraries.structure

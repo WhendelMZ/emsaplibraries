@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 import os
 import re
-import shutil
 import subprocess
 import warnings
 from collections import defaultdict
@@ -15,7 +14,7 @@ from pathlib import Path
 import numpy as np
 from Bio.PDB.PDBParser import PDBParser
 
-from ._runtime import require_executable, require_module
+from ._runtime import require_module
 
 
 @dataclass
@@ -740,84 +739,3 @@ def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) ->
     # Convert to kJ/mol
     return (sum(delta_g_values) / len(delta_g_values)) / 1000.0
 
-
-def process_single_protein(
-    pdb_file: str | Path,
-    aux_output_dir: str | Path,
-    bbox_min,
-    bbox_max,
-):
-    """Run the available PDB2PQR/APBS indicator pipeline for one protein.
-
-    Returns the legacy tuple shape. Metrics not implemented in this package version
-    are returned as ``N/A`` rather than relying on undefined helper functions.
-    """
-    from .electrostatics import find_dx_file, generate_apbs_in_fixed
-
-    require_executable("pdb2pqr", "Install PDB2PQR and ensure 'pdb2pqr' is on PATH.")
-    require_executable("apbs", "Install APBS and ensure 'apbs' is on PATH.")
-
-    pdb_path = Path(pdb_file)
-    pdb_name = pdb_path.stem
-    pqr_file = Path(f"{pdb_name}.pqr")
-
-    subprocess.run(
-        ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_path), str(pqr_file)],
-        check=True,
-    )
-    in_path = generate_apbs_in_fixed(
-        pdb_path, pdb_name, bbox_min, bbox_max, resolution=0.75
-    )
-    log_path = Path(f"{pdb_name}.out").resolve()
-    with open(log_path, "w", encoding="utf-8") as log_handle:
-        subprocess.run(
-            ["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True
-        )
-
-    dx_path = find_dx_file(pdb_name)
-
-    p_sasa, _, _ = calculate_p_sasa(pqr_file, pdb_path, dx_path)
-    q_sasa, _, _ = calculate_q_sasa(pqr_file)
-    ecpi_data = calculate_residue_exposed_charge(pqr_file, pdb_path)
-    see_val = calculate_see(pqr_file, dx_path)
-    pkaI_val = calculate_protein_pka_sasa(pdb_file, pqr_file)
-    hse_val, _, _ = calculate_hse(pdb_file, pqr_file)
-    abse_val = acid_base_stability_estimator(pdb_file, pqr_file)
-
-    # --- Print summary ---
-    print(f"✅ Protein: {pdb_name}")
-    print(f" Solvent-Accessible Surface Potential - P_SASA (kBT/e): {p_sasa:.2f}")
-    print(f" Solvent-Accessible Surface Charge - Q_SASA (e): {q_sasa:.2f}")
-    print(f" Exposed Charge % Index : {ecpi_data['percent_exposed_charge']:.2f}")
-    print(f" Surface Electrostatic Energy - SEE (kBT): {see_val:.2f}")
-    print(f" Hydrophobic Surface Exposure - HSE (dimensionless): {hse_val:.2f}")
-    print(
-        f" pKa Index of Ionizable Residue Groups - pKaI (dimensionless): {pkaI_val:.2f}"
-    )
-    print(f" Acid-Base Stability Estimator - ABSE (kJ/mol): {abse_val:.2f}")
-
-    aux_dir = Path(aux_output_dir)
-    aux_dir.mkdir(parents=True, exist_ok=True)
-    for candidate in [
-        f"{pdb_name}.in",
-        f"{pdb_name}.out",
-        f"{pdb_name}.pka",
-        f"{pdb_name}.pqr",
-        str(dx_path),
-        f"{pdb_name}-input.p",
-    ]:
-        candidate_path = Path(candidate)
-        if candidate_path.exists():
-            shutil.move(str(candidate_path), aux_dir / candidate_path.name)
-
-    return (
-        pdb_name,
-        f"{p_sasa:.2f}",
-        f"{q_sasa:.2f}",
-        f"{ecpi_data['percent_exposed_charge']:.2f}",
-        f"{see_val:.2f}",
-        f"{hse_val:.2f}",
-        f"{pkaI_val:.2f}",
-        f"{abse_val:.2f}",
-        # f"{surface_potential_percent:.2f}",
-    )
