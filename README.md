@@ -2,7 +2,7 @@
 
 `emsaplibraries` is an import-first Python package for protein sequence preprocessing, structure handling, electrostatic simulation helpers, and protein indicator calculations.
 
-The main public API is artifact-based: core functions calculate metrics from existing PDB, PQR, DX, and optional PKA files rather than owning a full workflow engine. The preferred entry point for scripts and Nextflow tasks is exported from the package root:
+The main public API is artifact-based: core functions calculate metrics from existing PDB, PQR, DX, and optional PKA files rather than owning a full workflow engine.
 
 ```python
 from emsaplibraries import calculate_protein_metrics
