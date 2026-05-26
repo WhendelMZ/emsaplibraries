@@ -84,6 +84,48 @@ def test_process_single_protein_checks_missing_apbs(monkeypatch, tmp_path):
         )
 
 
+def test_process_single_protein_checks_missing_propka(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+
+    def fake_which(name):
+        return name if name in {"pdb2pqr", "apbs"} else None
+
+    monkeypatch.setattr("emsaplibraries._runtime.shutil.which", fake_which)
+    monkeypatch.setattr(
+        "emsaplibraries.pipeline.subprocess.run",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.pipeline.generate_apbs_in_fixed",
+        lambda *args, **kwargs: "protein.in",
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.pipeline.find_dx_file",
+        lambda name: tmp_path / "protein.dx",
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.pipeline.calculate_p_sasa",
+        lambda pqr, pdb, dx: (1.0, 0.0, 0.0),
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.pipeline.calculate_q_sasa",
+        lambda pqr: (2.0, 0.0, 0.0),
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.pipeline.calculate_residue_exposed_charge",
+        lambda pqr, pdb: {"percent_exposed_charge": 3.0},
+    )
+    monkeypatch.setattr("emsaplibraries.pipeline.calculate_see", lambda pqr, dx: 4.0)
+
+    with pytest.raises(RuntimeError, match="propka3"):
+        process_single_protein(
+            tmp_path / "protein.pdb",
+            tmp_path / "aux",
+            [0, 0, 0],
+            [1, 1, 1],
+        )
+
+
 def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     calls = []
     pdb_file = tmp_path / "protein.pdb"
@@ -99,6 +141,8 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
             Path(command[-1]).write_text("PQR\n", encoding="utf-8")
         elif command[0] == "apbs":
             dx_file.write_text("DX\n", encoding="utf-8")
+        elif command[0] == "propka3":
+            Path("protein.pka").write_text("PKA\n", encoding="utf-8")
 
     monkeypatch.setattr("emsaplibraries.pipeline.subprocess.run", fake_run)
     monkeypatch.setattr("emsaplibraries.pipeline.find_dx_file", lambda name: dx_file)
@@ -117,7 +161,7 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     monkeypatch.setattr("emsaplibraries.pipeline.calculate_see", lambda pqr, dx: 4.0)
     monkeypatch.setattr(
         "emsaplibraries.pipeline.calculate_protein_pka_sasa",
-        lambda pdb, pqr: 5.0,
+        lambda pdb, pqr, pka: 5.0,
     )
     monkeypatch.setattr(
         "emsaplibraries.pipeline.calculate_hse",
@@ -125,7 +169,7 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "emsaplibraries.pipeline.acid_base_stability_estimator",
-        lambda pdb, pqr: 7.0,
+        lambda pdb, pqr, pka: 7.0,
     )
 
     result = process_single_protein(
@@ -138,6 +182,7 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     assert calls == [
         ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_file), "protein.pqr"],
         ["apbs", "protein.in"],
+        ["propka3", str(pdb_file)],
     ]
     assert result.as_legacy_tuple() == (
         "protein",
@@ -153,3 +198,4 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     assert result.dx_file == tmp_path / "aux" / "protein.dx"
     assert result.apbs_input_file == tmp_path / "aux" / "protein.in"
     assert result.apbs_log_file == tmp_path / "aux" / "protein.out"
+    assert result.pka_file == tmp_path / "aux" / "protein.pka"

@@ -3,10 +3,14 @@ import pytest
 
 from emsaplibraries.indicators import (
     CustomAtom,
+    acid_base_stability_estimator,
+    calculate_pka_by_sasa,
+    calculate_protein_pka_sasa,
     calculate_q_sasa,
     interpolate_potential,
     parse_dx,
     parse_pqr,
+    parse_propka_pka,
 )
 
 
@@ -72,3 +76,45 @@ def test_calculate_q_sasa_smoke(tmp_path):
     assert isinstance(q_sasa, float)
     assert isinstance(numerator, float)
     assert total_sasa > 0
+
+
+def test_parse_propka_pka_reads_valid_rows_only(tmp_path):
+    pka = tmp_path / "protein.pka"
+    pka.write_text(
+        "SUMMARY OF THIS PREDICTION\n"
+        "ASP 25 A 3.90 0.00 0.00\n"
+        "GLU 101 B not-a-number\n"
+        "header row that should be ignored\n"
+        "LYS 5 A 10.50\n"
+        "CYS 7 AB 8.30\n",
+        encoding="utf-8",
+    )
+
+    assert parse_propka_pka(pka) == {
+        "ASP25A": 3.9,
+        "LYS5A": 10.5,
+    }
+
+
+def test_pka_metrics_require_pka_file_and_use_parsed_values(monkeypatch, tmp_path):
+    pka = tmp_path / "protein.pka"
+    pka.write_text("ASP 1 A 4.90\nLYS 2 A 10.50\n", encoding="utf-8")
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.residue_sasa_from_pqr",
+        lambda pdb, pqr: {"ASP1A": 55.0, "LYS2A": 200.0},
+    )
+
+    result = calculate_pka_by_sasa("protein.pdb", "protein.pqr", pka)
+
+    assert result == {
+        "ASP1A": (4.9, 0.5, 2.45),
+        "LYS2A": (10.5, 1.0, 10.5),
+    }
+    assert calculate_protein_pka_sasa("protein.pdb", "protein.pqr", pka) == 6.475
+    assert acid_base_stability_estimator("protein.pdb", "protein.pqr", pka) > 0.0
+
+
+def test_indicators_module_does_not_import_subprocess():
+    import emsaplibraries.indicators as indicators
+
+    assert not hasattr(indicators, "subprocess")
