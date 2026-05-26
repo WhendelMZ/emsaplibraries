@@ -594,7 +594,7 @@ def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     return residue_sasa
 
 
-def run_propka(pdb_file):
+def run_propka(pdb_file: str | Path) -> dict:
     pdb_base = os.path.basename(pdb_file)
     out = os.path.splitext(pdb_base)[0] + ".pka"
     out_file = os.path.join("/content", out)
@@ -664,7 +664,7 @@ def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     return results
 
 
-def calculate_protein_pka_sasa(pdb_file, pqr_file):
+def calculate_protein_pka_sasa(pdb_file: str | Path, pqr_file: str | Path) -> float:
     residues = calculate_pka_by_sasa(pdb_file, pqr_file)
 
     if not residues:
