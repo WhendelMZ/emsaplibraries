@@ -28,4 +28,5 @@ def test_public_submodule_imports():
     assert emsaplibraries.external.run_apbs
     assert emsaplibraries.external.run_pdb2pqr
     assert emsaplibraries.external.run_mafft
+    assert emsaplibraries.external.run_propka
     assert emsaplibraries.structure.cif_to_pdb

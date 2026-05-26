@@ -96,7 +96,6 @@ def test_process_single_protein_checks_missing_propka(monkeypatch, tmp_path):
 
 
 def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
-    calls = []
     pdb_file = tmp_path / "protein.pdb"
     pdb_file.write_text("HEADER\n", encoding="utf-8")
     dx_file = tmp_path / "protein.dx"
@@ -118,14 +117,14 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
         dx_file.write_text("DX\n", encoding="utf-8")
         return str(Path(f"{name}.out").resolve())
 
-    def fake_run(command, **kwargs):
-        calls.append(command)
-        if command[0] == "propka3":
-            Path("protein.pka").write_text("PKA\n", encoding="utf-8")
+    def fake_run_propka(pdb):
+        wrapper_calls.append(("propka3", pdb))
+        Path("protein.pka").write_text("PKA\n", encoding="utf-8")
+        return Path("protein.pka")
 
     monkeypatch.setattr("emsaplibraries.pipeline.run_pdb2pqr", fake_run_pdb2pqr)
     monkeypatch.setattr("emsaplibraries.pipeline.run_apbs", fake_run_apbs)
-    monkeypatch.setattr("emsaplibraries.pipeline.subprocess.run", fake_run)
+    monkeypatch.setattr("emsaplibraries.pipeline.run_propka", fake_run_propka)
     monkeypatch.setattr("emsaplibraries.pipeline.find_dx_file", lambda name: dx_file)
     metric_calls = []
 
@@ -166,8 +165,8 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     assert wrapper_calls == [
         ("pdb2pqr", pdb_file, "protein"),
         ("apbs", pdb_file, "protein", [0, 0, 0], [1, 1, 1]),
+        ("propka3", pdb_file),
     ]
-    assert calls == [["propka3", str(pdb_file)]]
     assert result.as_legacy_tuple() == (
         "protein",
         "1.00",
