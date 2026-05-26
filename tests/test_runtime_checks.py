@@ -1,7 +1,6 @@
 import pytest
 
-from emsaplibraries.electrostatics import run_apbs, run_pdb2pqr
-from emsaplibraries.preprocessing import run_mafft
+from emsaplibraries.external import run_apbs, run_mafft, run_pdb2pqr
 
 
 def test_run_mafft_checks_missing_tool(monkeypatch, tmp_path):

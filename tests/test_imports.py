@@ -12,6 +12,7 @@ def test_top_level_imports():
 
 def test_public_submodule_imports():
     import emsaplibraries.electrostatics
+    import emsaplibraries.external
     import emsaplibraries.indicators
     import emsaplibraries.pipeline
     import emsaplibraries.preprocessing
@@ -21,6 +22,10 @@ def test_public_submodule_imports():
     assert not hasattr(emsaplibraries.indicators, "process_single_protein")
     assert emsaplibraries.pipeline.process_single_protein
     assert emsaplibraries.pipeline.ProteinPipelineResult
-    assert emsaplibraries.electrostatics.run_apbs
-    assert emsaplibraries.preprocessing.run_mafft
+    assert not hasattr(emsaplibraries.electrostatics, "run_apbs")
+    assert not hasattr(emsaplibraries.electrostatics, "run_pdb2pqr")
+    assert not hasattr(emsaplibraries.preprocessing, "run_mafft")
+    assert emsaplibraries.external.run_apbs
+    assert emsaplibraries.external.run_pdb2pqr
+    assert emsaplibraries.external.run_mafft
     assert emsaplibraries.structure.cif_to_pdb

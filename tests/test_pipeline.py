@@ -53,6 +53,10 @@ def test_process_single_protein_checks_missing_apbs(monkeypatch, tmp_path):
         return "/usr/bin/pdb2pqr" if name == "pdb2pqr" else None
 
     monkeypatch.setattr("emsaplibraries._runtime.shutil.which", fake_which)
+    monkeypatch.setattr(
+        "emsaplibraries.pipeline.run_pdb2pqr",
+        lambda *args: "protein.pqr",
+    )
 
     with pytest.raises(RuntimeError, match="apbs"):
         process_single_protein(
@@ -67,16 +71,16 @@ def test_process_single_protein_checks_missing_propka(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
 
     def fake_which(name):
-        return name if name in {"pdb2pqr", "apbs"} else None
+        return None if name == "propka3" else name
 
     monkeypatch.setattr("emsaplibraries._runtime.shutil.which", fake_which)
     monkeypatch.setattr(
-        "emsaplibraries.pipeline.subprocess.run",
-        lambda *args, **kwargs: None,
+        "emsaplibraries.pipeline.run_pdb2pqr",
+        lambda *args: "protein.pqr",
     )
     monkeypatch.setattr(
-        "emsaplibraries.pipeline.generate_apbs_in_fixed",
-        lambda *args, **kwargs: "protein.in",
+        "emsaplibraries.pipeline.run_apbs",
+        lambda *args: "protein.out",
     )
     monkeypatch.setattr(
         "emsaplibraries.pipeline.find_dx_file",
@@ -100,15 +104,27 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("emsaplibraries._runtime.shutil.which", lambda name: name)
 
+    wrapper_calls = []
+
+    def fake_run_pdb2pqr(pdb, name):
+        wrapper_calls.append(("pdb2pqr", pdb, name))
+        Path(f"{name}.pqr").write_text("PQR\n", encoding="utf-8")
+        return f"{name}.pqr"
+
+    def fake_run_apbs(pdb, name, bbox_min, bbox_max):
+        wrapper_calls.append(("apbs", pdb, name, bbox_min, bbox_max))
+        Path(f"{name}.in").write_text("IN\n", encoding="utf-8")
+        Path(f"{name}.out").write_text("OUT\n", encoding="utf-8")
+        dx_file.write_text("DX\n", encoding="utf-8")
+        return str(Path(f"{name}.out").resolve())
+
     def fake_run(command, **kwargs):
         calls.append(command)
-        if command[0] == "pdb2pqr":
-            Path(command[-1]).write_text("PQR\n", encoding="utf-8")
-        elif command[0] == "apbs":
-            dx_file.write_text("DX\n", encoding="utf-8")
-        elif command[0] == "propka3":
+        if command[0] == "propka3":
             Path("protein.pka").write_text("PKA\n", encoding="utf-8")
 
+    monkeypatch.setattr("emsaplibraries.pipeline.run_pdb2pqr", fake_run_pdb2pqr)
+    monkeypatch.setattr("emsaplibraries.pipeline.run_apbs", fake_run_apbs)
     monkeypatch.setattr("emsaplibraries.pipeline.subprocess.run", fake_run)
     monkeypatch.setattr("emsaplibraries.pipeline.find_dx_file", lambda name: dx_file)
     metric_calls = []
@@ -147,11 +163,11 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
         [1, 1, 1],
     )
 
-    assert calls == [
-        ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_file), "protein.pqr"],
-        ["apbs", "protein.in"],
-        ["propka3", str(pdb_file)],
+    assert wrapper_calls == [
+        ("pdb2pqr", pdb_file, "protein"),
+        ("apbs", pdb_file, "protein", [0, 0, 0], [1, 1, 1]),
     ]
+    assert calls == [["propka3", str(pdb_file)]]
     assert result.as_legacy_tuple() == (
         "protein",
         "1.00",
