@@ -585,7 +585,7 @@ def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
                 key = f"{resname}{resnum}{chain_id}"
 
                 area = 0.0
-                for atom in residue:
+                for _atom in residue:
                     area += sasa_atoms[atom_index]
                     atom_index += 1
 
