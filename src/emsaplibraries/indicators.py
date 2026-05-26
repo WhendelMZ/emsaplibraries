@@ -585,7 +585,7 @@ def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
                 key = f"{resname}{resnum}{chain_id}"
 
                 area = 0.0
-                for _atom in residue:
+                for atom in residue:
                     area += sasa_atoms[atom_index]
                     atom_index += 1
 
@@ -672,6 +672,8 @@ def calculate_protein_pka_sasa(pdb_file, pqr_file):
 
     return sum(v[2] for v in residues.values()) / len(residues)
 
+R = 8,134 #J/mol/K
+T = 298.15 #K
 
 def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) -> float:
     """
@@ -702,7 +704,7 @@ def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) ->
     }
 
     # Compute SASA-weighted pKa values
-    pka_results = calculate_pka_weighted_by_sasa(pdb_file, pqr_file)
+    pka_results = calculate_pka_by_sasa(pdb_file, pqr_file)
 
     if not pka_results:
         return 0.0
