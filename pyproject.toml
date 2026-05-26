@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emsaplibraries"
+version = "0.1.0"
+description = "Protein structure preprocessing, electrostatics, and indicator calculation utilities."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+  { name = "emsaplibraries contributors" }
+]
+keywords = ["protein", "bioinformatics", "electrostatics", "sasa", "pdb", "pqr"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+  "numpy>=1.23",
+  "biopython>=1.81",
+  "freesasa>=2.2.0",
+  "pyrosetta-installer>=0.1.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2",
+  "pre-commit>=3.7",
+  "pytest>=8",
+  "ruff>=0.6",
+]
+
+[project.urls]
+Repository = "https://github.com/WhendelMZ/emsaplibraries"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+exclude = [
+  ".git",
+  ".mypy_cache",
+  ".pytest_cache",
+  ".ruff_cache",
+  ".venv",
+  "build",
+  "dist",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
