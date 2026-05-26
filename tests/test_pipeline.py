@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-import emsaplibraries
+from emsaplibraries.indicators import ProteinMetricsResult
 from emsaplibraries.pipeline import ProteinPipelineResult, process_single_protein
 
 
@@ -34,27 +34,6 @@ def test_pipeline_result_legacy_tuple_formats_metrics():
         "-0.44",
     )
     assert isinstance(result.p_sasa, float)
-
-
-def test_root_process_single_protein_warns_and_delegates(monkeypatch):
-    expected = object()
-
-    def fake_process_single_protein(*args, **kwargs):
-        assert args == ("protein.pdb", "aux", [0, 0, 0], [1, 1, 1])
-        assert kwargs == {"verbose": True}
-        return expected
-
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.process_single_protein",
-        fake_process_single_protein,
-    )
-
-    with pytest.warns(DeprecationWarning, match="emsaplibraries.pipeline"):
-        result = emsaplibraries.process_single_protein(
-            "protein.pdb", "aux", [0, 0, 0], [1, 1, 1], verbose=True
-        )
-
-    assert result is expected
 
 
 def test_process_single_protein_checks_missing_pdb2pqr(monkeypatch, tmp_path):
@@ -103,20 +82,6 @@ def test_process_single_protein_checks_missing_propka(monkeypatch, tmp_path):
         "emsaplibraries.pipeline.find_dx_file",
         lambda name: tmp_path / "protein.dx",
     )
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_p_sasa",
-        lambda pqr, pdb, dx: (1.0, 0.0, 0.0),
-    )
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_q_sasa",
-        lambda pqr: (2.0, 0.0, 0.0),
-    )
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_residue_exposed_charge",
-        lambda pqr, pdb: {"percent_exposed_charge": 3.0},
-    )
-    monkeypatch.setattr("emsaplibraries.pipeline.calculate_see", lambda pqr, dx: 4.0)
-
     with pytest.raises(RuntimeError, match="propka3"):
         process_single_protein(
             tmp_path / "protein.pdb",
@@ -146,30 +111,33 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
 
     monkeypatch.setattr("emsaplibraries.pipeline.subprocess.run", fake_run)
     monkeypatch.setattr("emsaplibraries.pipeline.find_dx_file", lambda name: dx_file)
+    metric_calls = []
+
+    def fake_calculate_protein_metrics(pdb, pqr, dx, pka=None):
+        metric_calls.append((pdb, pqr, dx, pka))
+        return ProteinMetricsResult(
+            protein_name="protein",
+            pdb_file=pdb,
+            pqr_file=pqr,
+            dx_file=dx,
+            pka_file=pka,
+            p_sasa=1.0,
+            q_sasa=2.0,
+            ecpi_percent=3.0,
+            see=4.0,
+            hse=6.0,
+            pka_sasa=5.0,
+            abse=7.0,
+            p_sasa_numerator=0.0,
+            p_sasa_denominator=0.0,
+            q_sasa_numerator=0.0,
+            q_sasa_total_sasa=0.0,
+            ecpi_data={"percent_exposed_charge": 3.0},
+        )
+
     monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_p_sasa",
-        lambda pqr, pdb, dx: (1.0, 0.0, 0.0),
-    )
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_q_sasa",
-        lambda pqr: (2.0, 0.0, 0.0),
-    )
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_residue_exposed_charge",
-        lambda pqr, pdb: {"percent_exposed_charge": 3.0},
-    )
-    monkeypatch.setattr("emsaplibraries.pipeline.calculate_see", lambda pqr, dx: 4.0)
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_protein_pka_sasa",
-        lambda pdb, pqr, pka: 5.0,
-    )
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.calculate_hse",
-        lambda pdb, pqr: (6.0, 0.0, 0.0),
-    )
-    monkeypatch.setattr(
-        "emsaplibraries.pipeline.acid_base_stability_estimator",
-        lambda pdb, pqr, pka: 7.0,
+        "emsaplibraries.pipeline.calculate_protein_metrics",
+        fake_calculate_protein_metrics,
     )
 
     result = process_single_protein(
@@ -199,3 +167,11 @@ def test_process_single_protein_subprocess_boundary(monkeypatch, tmp_path):
     assert result.apbs_input_file == tmp_path / "aux" / "protein.in"
     assert result.apbs_log_file == tmp_path / "aux" / "protein.out"
     assert result.pka_file == tmp_path / "aux" / "protein.pka"
+    assert metric_calls == [
+        (
+            pdb_file,
+            Path("protein.pqr"),
+            dx_file,
+            Path("protein.pka"),
+        )
+    ]

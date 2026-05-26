@@ -3,8 +3,10 @@ import pytest
 
 from emsaplibraries.indicators import (
     CustomAtom,
+    ProteinMetricsResult,
     acid_base_stability_estimator,
     calculate_pka_by_sasa,
+    calculate_protein_metrics,
     calculate_protein_pka_sasa,
     calculate_q_sasa,
     interpolate_potential,
@@ -118,3 +120,85 @@ def test_indicators_module_does_not_import_subprocess():
     import emsaplibraries.indicators as indicators
 
     assert not hasattr(indicators, "subprocess")
+
+
+def test_calculate_protein_metrics_without_pka_file(monkeypatch):
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_p_sasa",
+        lambda pqr, pdb, dx: (1.0, 10.0, 20.0),
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_q_sasa",
+        lambda pqr: (2.0, 30.0, 40.0),
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_residue_exposed_charge",
+        lambda pqr, pdb: {"percent_exposed_charge": 3.0, "per_residue": []},
+    )
+    monkeypatch.setattr("emsaplibraries.indicators.calculate_see", lambda pqr, dx: 4.0)
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_hse",
+        lambda pdb, pqr: (5.0, 0.0, 0.0),
+    )
+
+    result = calculate_protein_metrics("protein.pdb", "protein.pqr", "protein.dx")
+
+    assert isinstance(result, ProteinMetricsResult)
+    assert result.protein_name == "protein"
+    assert result.p_sasa == 1.0
+    assert result.q_sasa == 2.0
+    assert result.ecpi_percent == 3.0
+    assert result.see == 4.0
+    assert result.hse == 5.0
+    assert result.pka_sasa is None
+    assert result.abse is None
+    assert result.p_sasa_numerator == 10.0
+    assert result.p_sasa_denominator == 20.0
+    assert result.q_sasa_numerator == 30.0
+    assert result.q_sasa_total_sasa == 40.0
+    assert result.as_dict()["pka_file"] is None
+    assert result.as_dict()["pdb_file"] == "protein.pdb"
+
+
+def test_calculate_protein_metrics_with_pka_file(monkeypatch):
+    pka_calls = []
+
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_p_sasa",
+        lambda pqr, pdb, dx: (1.0, 10.0, 20.0),
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_q_sasa",
+        lambda pqr: (2.0, 30.0, 40.0),
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_residue_exposed_charge",
+        lambda pqr, pdb: {"percent_exposed_charge": 3.0},
+    )
+    monkeypatch.setattr("emsaplibraries.indicators.calculate_see", lambda pqr, dx: 4.0)
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_hse",
+        lambda pdb, pqr: (5.0, 0.0, 0.0),
+    )
+
+    def fake_pka_sasa(pdb, pqr, pka):
+        pka_calls.append((pdb, pqr, pka))
+        return 6.0
+
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.calculate_protein_pka_sasa",
+        fake_pka_sasa,
+    )
+    monkeypatch.setattr(
+        "emsaplibraries.indicators.acid_base_stability_estimator",
+        lambda pdb, pqr, pka: 7.0,
+    )
+
+    result = calculate_protein_metrics(
+        "protein.pdb", "protein.pqr", "protein.dx", "protein.pka"
+    )
+
+    assert result.pka_sasa == 6.0
+    assert result.abse == 7.0
+    assert result.as_dict()["pka_file"] == "protein.pka"
+    assert pka_calls == [(result.pdb_file, result.pqr_file, result.pka_file)]
