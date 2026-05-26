@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ._runtime import require_executable
-from .electrostatics import find_dx_file, generate_apbs_in_fixed
+from .electrostatics import find_dx_file
+from .external import run_apbs, run_pdb2pqr
 from .indicators import (
     calculate_protein_metrics,
 )
@@ -104,30 +105,11 @@ def process_single_protein(
     verbose: bool = False,
 ) -> ProteinPipelineResult:
     """Run the available PDB2PQR/APBS indicator pipeline for one protein."""
-    require_executable("pdb2pqr", "Install PDB2PQR and ensure 'pdb2pqr' is on PATH.")
-    require_executable("apbs", "Install APBS and ensure 'apbs' is on PATH.")
-
     pdb_path = Path(pdb_file)
     pdb_name = pdb_path.stem
-    pqr_file = Path(f"{pdb_name}.pqr")
-    # step 1: generate PQR file with PDB2PQR using PARSE force field and pH 7
-    subprocess.run(
-        ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_path), str(pqr_file)],
-        check=True,
-    )
-    # step 2: generate APBS input file and run APBS to get electrostatic potential map
-    in_path = Path(
-        generate_apbs_in_fixed(pdb_path, pdb_name, bbox_min, bbox_max, resolution=0.75)
-    )
-    # step 3: calculate indicators from generated files
-    log_path = Path(f"{pdb_name}.out").resolve()
-    with open(log_path, "w", encoding="utf-8") as log_handle:
-        subprocess.run(
-            ["apbs", str(in_path)],
-            stdout=log_handle,
-            stderr=subprocess.STDOUT,
-            check=True,
-        )
+    pqr_file = Path(run_pdb2pqr(pdb_path, pdb_name))
+    log_path = Path(run_apbs(pdb_path, pdb_name, bbox_min, bbox_max))
+    in_path = Path(f"{pdb_name}.in")
 
     dx_path = Path(find_dx_file(pdb_name))
 

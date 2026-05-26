@@ -42,14 +42,18 @@ The package metadata installs the normal Python dependencies needed by the publi
 
 PyRosetta itself has licensing and distribution requirements. Install it according to the official PyRosetta instructions for your environment. If `relax_pdbs` is called without PyRosetta importable, the function raises an actionable `ImportError`.
 
-## External Tool Requirements
+## External Tool Wrappers
 
-Some helper functions call external command-line tools. The package imports without these tools, and checks for them only when tool-dependent functions are called.
+Optional convenience wrappers for command-line tools live in `emsaplibraries.external`. The package imports without these tools, and checks for them only when wrapper or pipeline functions are called.
 
-- `run_mafft` requires `mafft`
-- `run_pdb2pqr` and `pipeline.process_single_protein` require `pdb2pqr`
-- `run_apbs` and `pipeline.process_single_protein` require `apbs`
+- `external.run_mafft` requires `mafft`
+- `external.run_pdb2pqr` and `pipeline.process_single_protein` require `pdb2pqr`
+- `external.run_apbs` and `pipeline.process_single_protein` require `apbs`
 - `pipeline.process_single_protein` requires `propka3`
+
+```python
+from emsaplibraries.external import run_apbs, run_mafft, run_pdb2pqr
+```
 
 The package root does not expose workflow orchestration. Import pipeline helpers explicitly from `emsaplibraries.pipeline`.
 
@@ -103,9 +107,12 @@ print(result.as_legacy_tuple())
 ```python
 import emsaplibraries.indicators
 import emsaplibraries.pipeline
+import emsaplibraries.external
 import emsaplibraries.electrostatics
 import emsaplibraries.preprocessing
 import emsaplibraries.structure
 ```
+
+`emsaplibraries.electrostatics` contains APBS input and DX artifact helpers; command execution wrappers live in `emsaplibraries.external`.
 
 The v1 API keeps the current tuple and dictionary return shapes for indicator functions.
