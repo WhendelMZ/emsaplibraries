@@ -52,10 +52,7 @@ def _print_summary(result: ProteinPipelineResult) -> None:
         " Solvent-Accessible Surface Potential - P_SASA (kBT/e): "
         f"{result.p_sasa:.2f}"
     )
-    print(
-        " Solvent-Accessible Surface Charge - Q_SASA (e): "
-        f"{result.q_sasa:.2f}"
-    )
+    print(" Solvent-Accessible Surface Charge - Q_SASA (e): " f"{result.q_sasa:.2f}")
     print(f" Exposed Charge % Index : {result.ecpi_percent:.2f}")
     print(f" Surface Electrostatic Energy - SEE (kBT): {result.see:.2f}")
     print(f" Hydrophobic Surface Exposure - HSE (dimensionless): {result.hse:.2f}")
