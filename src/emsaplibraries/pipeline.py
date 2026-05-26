@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from ._runtime import require_executable
 from .electrostatics import find_dx_file
-from .external import run_apbs, run_pdb2pqr
+from .external import run_apbs, run_pdb2pqr, run_propka
 from .indicators import (
     calculate_protein_metrics,
 )
@@ -81,21 +79,6 @@ def _move_if_exists(path: str | Path, output_dir: Path) -> Path | None:
     return destination
 
 
-def _run_propka(pdb_file: str | Path) -> Path:
-    """Run PROPKA and return the generated .pka file path."""
-    propka = require_executable(
-        "propka3", "Install PROPKA and ensure 'propka3' is on PATH."
-    )
-    pdb_path = Path(pdb_file)
-    pka_path = Path(f"{pdb_path.stem}.pka")
-
-    subprocess.run([propka, str(pdb_path)], check=True)
-
-    if not pka_path.exists():
-        raise FileNotFoundError(f"PROPKA output file not found: {pka_path}")
-    return pka_path
-
-
 def process_single_protein(
     pdb_file: str | Path,
     aux_output_dir: str | Path,
@@ -113,7 +96,7 @@ def process_single_protein(
 
     dx_path = Path(find_dx_file(pdb_name))
 
-    pka_file = _run_propka(pdb_path)
+    pka_file = run_propka(pdb_path)
     metrics = calculate_protein_metrics(pdb_path, pqr_file, dx_path, pka_file)
 
     # safely move generated files to the aux output directory, if they exist, and

@@ -49,10 +49,10 @@ Optional convenience wrappers for command-line tools live in `emsaplibraries.ext
 - `external.run_mafft` requires `mafft`
 - `external.run_pdb2pqr` and `pipeline.process_single_protein` require `pdb2pqr`
 - `external.run_apbs` and `pipeline.process_single_protein` require `apbs`
-- `pipeline.process_single_protein` requires `propka3`
+- `external.run_propka` and `pipeline.process_single_protein` require `propka3`
 
 ```python
-from emsaplibraries.external import run_apbs, run_mafft, run_pdb2pqr
+from emsaplibraries.external import run_apbs, run_mafft, run_pdb2pqr, run_propka
 ```
 
 The package root does not expose workflow orchestration. Import pipeline helpers explicitly from `emsaplibraries.pipeline`.
@@ -100,7 +100,7 @@ print(result.p_sasa)
 print(result.as_legacy_tuple())
 ```
 
-`process_single_protein` still runs PDB2PQR, APBS, and PROPKA internally for convenience, calculates the available metrics, moves intermediate artifacts into the auxiliary output directory, and returns a typed result object.
+`process_single_protein` still uses the external wrappers for PDB2PQR, APBS, and PROPKA convenience execution, calculates the available metrics, moves intermediate artifacts into the auxiliary output directory, and returns a typed result object.
 
 ## Public Modules
 

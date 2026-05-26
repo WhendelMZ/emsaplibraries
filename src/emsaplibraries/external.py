@@ -47,3 +47,18 @@ def run_mafft(input_fasta: str | Path, output_fasta: str | Path) -> None:
         text=True,
     )
     Path(output_fasta).write_text(result.stdout, encoding="utf-8")
+
+
+def run_propka(pdb_file: str | Path) -> Path:
+    """Run PROPKA and return the generated .pka file path."""
+    propka = require_executable(
+        "propka3", "Install PROPKA and ensure 'propka3' is on PATH."
+    )
+    pdb_path = Path(pdb_file)
+    pka_path = Path(f"{pdb_path.stem}.pka")
+
+    subprocess.run([propka, str(pdb_path)], check=True)
+
+    if not pka_path.exists():
+        raise FileNotFoundError(f"PROPKA output file not found: {pka_path}")
+    return pka_path
