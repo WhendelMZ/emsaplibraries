@@ -86,6 +86,21 @@ def _move_if_exists(path: str | Path, output_dir: Path) -> Path | None:
     return destination
 
 
+def _run_propka(pdb_file: str | Path) -> Path:
+    """Run PROPKA and return the generated .pka file path."""
+    propka = require_executable(
+        "propka3", "Install PROPKA and ensure 'propka3' is on PATH."
+    )
+    pdb_path = Path(pdb_file)
+    pka_path = Path(f"{pdb_path.stem}.pka")
+
+    subprocess.run([propka, str(pdb_path)], check=True)
+
+    if not pka_path.exists():
+        raise FileNotFoundError(f"PROPKA output file not found: {pka_path}")
+    return pka_path
+
+
 def process_single_protein(
     pdb_file: str | Path,
     aux_output_dir: str | Path,
@@ -101,14 +116,16 @@ def process_single_protein(
     pdb_path = Path(pdb_file)
     pdb_name = pdb_path.stem
     pqr_file = Path(f"{pdb_name}.pqr")
-
+    # step 1: generate PQR file with PDB2PQR using PARSE force field and pH 7
     subprocess.run(
         ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_path), str(pqr_file)],
         check=True,
     )
+    # step 2: generate APBS input file and run APBS to get electrostatic potential map
     in_path = Path(
         generate_apbs_in_fixed(pdb_path, pdb_name, bbox_min, bbox_max, resolution=0.75)
     )
+    # step 3: calculate indicators from generated files
     log_path = Path(f"{pdb_name}.out").resolve()
     with open(log_path, "w", encoding="utf-8") as log_handle:
         subprocess.run(
@@ -124,16 +141,18 @@ def process_single_protein(
     q_sasa, _, _ = calculate_q_sasa(pqr_file)
     ecpi_data = calculate_residue_exposed_charge(pqr_file, pdb_path)
     see_val = calculate_see(pqr_file, dx_path)
-    pka_sasa_val = calculate_protein_pka_sasa(pdb_file, pqr_file)
+    pka_file = _run_propka(pdb_path)
+    pka_sasa_val = calculate_protein_pka_sasa(pdb_file, pqr_file, pka_file)
     hse_val, _, _ = calculate_hse(pdb_file, pqr_file)
-    abse_val = acid_base_stability_estimator(pdb_file, pqr_file)
+    abse_val = acid_base_stability_estimator(pdb_file, pqr_file, pka_file)
 
+    # safely move generated files to the aux output directory, if they exist, and
+    # update paths accordingly
     aux_dir = Path(aux_output_dir)
     aux_dir.mkdir(parents=True, exist_ok=True)
-
     moved_in = _move_if_exists(in_path, aux_dir) or in_path
     moved_out = _move_if_exists(log_path, aux_dir) or log_path
-    moved_pka = _move_if_exists(f"{pdb_name}.pka", aux_dir)
+    moved_pka = _move_if_exists(pka_file, aux_dir)
     moved_pqr = _move_if_exists(pqr_file, aux_dir) or pqr_file
     moved_dx = _move_if_exists(dx_path, aux_dir) or dx_path
     _move_if_exists(f"{pdb_name}-input.p", aux_dir)

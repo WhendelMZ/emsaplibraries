@@ -15,6 +15,7 @@ from .indicators import (
     interpolate_potential,
     parse_dx,
     parse_pqr,
+    parse_propka_pka,
 )
 from .pipeline import ProteinPipelineResult
 
@@ -45,6 +46,7 @@ __all__ = [
     "interpolate_potential",
     "parse_dx",
     "parse_pqr",
+    "parse_propka_pka",
     "process_single_protein",
 ]
 

@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import math
-import os
 import re
-import subprocess
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
@@ -593,16 +591,11 @@ def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     return residue_sasa
 
 
-def run_propka(pdb_file: str | Path) -> dict:
-    pdb_base = os.path.basename(pdb_file)
-    out = os.path.splitext(pdb_base)[0] + ".pka"
-    out_file = os.path.join("/content", out)
-
-    subprocess.run(["propka3", pdb_file], check=True)
-
+def parse_propka_pka(pka_file: str | Path) -> dict[str, float]:
+    """Parse residue pKa values from a PROPKA output file."""
     results = {}
-    with open(out_file) as f:
-        for line in f:
+    with open(pka_file, encoding="utf-8") as handle:
+        for line in handle:
             parts = line.split()
             if len(parts) < 4:
                 continue
@@ -610,13 +603,19 @@ def run_propka(pdb_file: str | Path) -> dict:
             resname = parts[0]
             resnum = parts[1]
             chain = parts[2]
+            if not re.fullmatch(r"[A-Z]{3}", resname):
+                continue
+            if not re.fullmatch(r"-?\d+[A-Za-z]?", resnum):
+                continue
+            if not re.fullmatch(r"[A-Za-z0-9]", chain):
+                continue
 
             try:
                 pka_val = float(parts[3])
             except (TypeError, ValueError):
                 continue
 
-            key = f"{resname}{resnum}{chain}"
+            key = f"{resname}{resnum}{chain}".upper()
             results[key] = pka_val
 
     return results
@@ -633,10 +632,12 @@ SASA_MAX = {
 }
 
 
-def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
+def calculate_pka_by_sasa(
+    pdb_file: str | Path, pqr_file: str | Path, pka_file: str | Path
+) -> dict:
     """Calculate pKa values weighted by solvent exposure."""
 
-    pkaI = run_propka(pdb_file)
+    pkaI = parse_propka_pka(pka_file)
     res_sasa = residue_sasa_from_pqr(pdb_file, pqr_file)
 
     results = {}
@@ -663,8 +664,10 @@ def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     return results
 
 
-def calculate_protein_pka_sasa(pdb_file: str | Path, pqr_file: str | Path) -> float:
-    residues = calculate_pka_by_sasa(pdb_file, pqr_file)
+def calculate_protein_pka_sasa(
+    pdb_file: str | Path, pqr_file: str | Path, pka_file: str | Path
+) -> float:
+    residues = calculate_pka_by_sasa(pdb_file, pqr_file, pka_file)
 
     if not residues:
         return 0.0
@@ -676,7 +679,9 @@ R = 8.134  # J/mol/K
 T = 298.15  # K
 
 
-def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) -> float:
+def acid_base_stability_estimator(
+    pdb_file: str | Path, pqr_file: str | Path, pka_file: str | Path
+) -> float:
     """
     Computes the electrostatic stability estimator (ΔG)
     using PROPKA-derived pKa values and SASA exposure.
@@ -705,7 +710,7 @@ def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) ->
     }
 
     # Compute SASA-weighted pKa values
-    pka_results = calculate_pka_by_sasa(pdb_file, pqr_file)
+    pka_results = calculate_pka_by_sasa(pdb_file, pqr_file, pka_file)
 
     if not pka_results:
         return 0.0
@@ -738,4 +743,3 @@ def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) ->
 
     # Convert to kJ/mol
     return (sum(delta_g_values) / len(delta_g_values)) / 1000.0
-

@@ -63,6 +63,7 @@ Input expectations:
 - PQR files must contain ATOM/HETATM rows with coordinates, charge, and radius in the final columns.
 - DX files must contain APBS/OpenDX-style grid metadata and potential values.
 - PDB files are used for atom and residue metadata when an indicator needs residue-level or PDB-coordinate mapping.
+- pKa and ABSE functions require a precomputed PROPKA `.pka` file;
 
 ## Pipeline Helpers
 
@@ -82,7 +83,7 @@ print(result.p_sasa)
 print(result.as_legacy_tuple())
 ```
 
-`process_single_protein` still runs PDB2PQR and APBS internally for convenience, calculates the available metrics, moves intermediate artifacts into the auxiliary output directory, and returns a typed result object. The old `from emsaplibraries import process_single_protein` import remains temporarily available with a deprecation warning.
+`process_single_protein` still runs PDB2PQR, APBS, and PROPKA internally for convenience, calculates the available metrics, moves intermediate artifacts into the auxiliary output directory, and returns a typed result object. The old `from emsaplibraries import process_single_protein` import remains temporarily available with a deprecation warning.
 
 ## Public Modules
 
