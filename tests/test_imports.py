@@ -4,15 +4,20 @@ def test_top_level_imports():
     assert callable(emsaplibraries.calculate_q_sasa)
     assert callable(emsaplibraries.calculate_p_sasa)
     assert callable(emsaplibraries.calculate_see)
+    assert callable(emsaplibraries.process_single_protein)
+    assert emsaplibraries.ProteinPipelineResult
 
 
 def test_public_submodule_imports():
     import emsaplibraries.electrostatics
     import emsaplibraries.indicators
+    import emsaplibraries.pipeline
     import emsaplibraries.preprocessing
     import emsaplibraries.structure
 
     assert emsaplibraries.indicators.parse_pqr
+    assert not hasattr(emsaplibraries.indicators, "process_single_protein")
+    assert emsaplibraries.pipeline.process_single_protein
     assert emsaplibraries.electrostatics.run_apbs
     assert emsaplibraries.preprocessing.run_mafft
     assert emsaplibraries.structure.cif_to_pdb
