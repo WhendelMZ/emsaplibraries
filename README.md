@@ -57,6 +57,44 @@ from emsaplibraries.external import run_apbs, run_mafft, run_pdb2pqr, run_propka
 
 The package root does not expose workflow orchestration. Import pipeline helpers explicitly from `emsaplibraries.pipeline`.
 
+## Docker Images
+
+This repository includes a multi-target Dockerfile for reproducible container builds.
+
+Build the lean artifact-processing image:
+
+```bash
+docker build --target core -t emsaplibraries:core .
+```
+
+Build the convenience image with available command-line wrappers:
+
+```bash
+docker build --target tools -t emsaplibraries:tools .
+```
+
+The `core` image installs the Python package and runtime Python dependencies only. It does not install APBS, PDB2PQR, PROPKA, or MAFFT, so it is the preferred image for tasks that consume precomputed PDB/PQR/DX/PKA artifacts with `calculate_protein_metrics()`.
+
+The `tools` image extends `core` and installs command-line tools available from the Debian package sources, currently attempting `mafft`, `pdb2pqr`, `propka`, and `apbs`.
+Smoke-test the core image:
+
+```bash
+docker run --rm emsaplibraries:core
+docker run --rm emsaplibraries:core python -c "from emsaplibraries import calculate_protein_metrics; print(calculate_protein_metrics.__name__)"
+```
+
+Smoke-test the tools image:
+
+```bash
+docker run --rm emsaplibraries:tools python -c "import emsaplibraries.external; print('external wrappers import')"
+docker run --rm emsaplibraries:tools mafft --version
+docker run --rm emsaplibraries:tools pdb2pqr --help
+docker run --rm emsaplibraries:tools propka3 --help
+docker run --rm emsaplibraries:tools which apbs
+```
+
+PyRosetta is not installed in either image because it has separate licensing and download requirements. The `pyrosetta-installer` Python package remains available, but `relax_pdbs()` requires a custom environment where PyRosetta itself has been installed according to its license terms.
+
 ## Indicator Helpers
 
 ```python
