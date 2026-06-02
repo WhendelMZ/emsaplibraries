@@ -6,7 +6,7 @@ import csv
 from collections import defaultdict
 from pathlib import Path
 
-from ._runtime import require_executable, require_module
+from ._runtime import require_module
 
 
 def _bio_modules():
@@ -41,20 +41,6 @@ def build_combined_fasta(
             if record.id in ids:
                 records.append(record)
     seq_io.write(records, str(output_path), "fasta")
-
-
-def run_mafft(input_fasta: str | Path, output_fasta: str | Path) -> None:
-    """Perform multiple sequence alignment using the MAFFT executable."""
-    mafft = require_executable("mafft", "Install MAFFT and ensure 'mafft' is on PATH.")
-    import subprocess
-
-    result = subprocess.run(
-        [mafft, str(input_fasta)],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-    Path(output_fasta).write_text(result.stdout, encoding="utf-8")
 
 
 def load_alignment(aligned_fasta: str | Path):

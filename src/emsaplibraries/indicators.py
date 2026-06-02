@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import math
-import os
 import re
-import shutil
-import subprocess
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass
@@ -15,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from Bio.PDB.PDBParser import PDBParser
 
-from ._runtime import require_executable, require_module
+from ._runtime import require_module
 
 
 @dataclass
@@ -29,6 +26,51 @@ class CustomAtom:
     coord: np.ndarray
     charge: float
     potential: float = 0.0
+
+
+@dataclass
+class ProteinMetricsResult:
+    """Artifact-based metrics for one protein."""
+
+    protein_name: str
+    pdb_file: Path
+    pqr_file: Path
+    dx_file: Path
+    pka_file: Path | None
+    p_sasa: float
+    q_sasa: float
+    ecpi_percent: float
+    see: float
+    hse: float
+    pka_sasa: float | None
+    abse: float | None
+    p_sasa_numerator: float
+    p_sasa_denominator: float
+    q_sasa_numerator: float
+    q_sasa_total_sasa: float
+    ecpi_data: dict
+
+    def as_dict(self) -> dict:
+        """Return a JSON-friendly representation of the metrics and artifacts."""
+        return {
+            "protein_name": self.protein_name,
+            "pdb_file": str(self.pdb_file),
+            "pqr_file": str(self.pqr_file),
+            "dx_file": str(self.dx_file),
+            "pka_file": str(self.pka_file) if self.pka_file is not None else None,
+            "p_sasa": self.p_sasa,
+            "q_sasa": self.q_sasa,
+            "ecpi_percent": self.ecpi_percent,
+            "see": self.see,
+            "hse": self.hse,
+            "pka_sasa": self.pka_sasa,
+            "abse": self.abse,
+            "p_sasa_numerator": self.p_sasa_numerator,
+            "p_sasa_denominator": self.p_sasa_denominator,
+            "q_sasa_numerator": self.q_sasa_numerator,
+            "q_sasa_total_sasa": self.q_sasa_total_sasa,
+            "ecpi_data": self.ecpi_data,
+        }
 
 
 def _freesasa():
@@ -594,16 +636,11 @@ def residue_sasa_from_pqr(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     return residue_sasa
 
 
-def run_propka(pdb_file: str | Path) -> dict:
-    pdb_base = os.path.basename(pdb_file)
-    out = os.path.splitext(pdb_base)[0] + ".pka"
-    out_file = os.path.join("/content", out)
-
-    subprocess.run(["propka3", pdb_file], check=True)
-
+def parse_propka_pka(pka_file: str | Path) -> dict[str, float]:
+    """Parse residue pKa values from a PROPKA output file."""
     results = {}
-    with open(out_file) as f:
-        for line in f:
+    with open(pka_file, encoding="utf-8") as handle:
+        for line in handle:
             parts = line.split()
             if len(parts) < 4:
                 continue
@@ -611,13 +648,19 @@ def run_propka(pdb_file: str | Path) -> dict:
             resname = parts[0]
             resnum = parts[1]
             chain = parts[2]
+            if not re.fullmatch(r"[A-Z]{3}", resname):
+                continue
+            if not re.fullmatch(r"-?\d+[A-Za-z]?", resnum):
+                continue
+            if not re.fullmatch(r"[A-Za-z0-9]", chain):
+                continue
 
             try:
                 pka_val = float(parts[3])
             except (TypeError, ValueError):
                 continue
 
-            key = f"{resname}{resnum}{chain}"
+            key = f"{resname}{resnum}{chain}".upper()
             results[key] = pka_val
 
     return results
@@ -634,10 +677,12 @@ SASA_MAX = {
 }
 
 
-def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
+def calculate_pka_by_sasa(
+    pdb_file: str | Path, pqr_file: str | Path, pka_file: str | Path
+) -> dict:
     """Calculate pKa values weighted by solvent exposure."""
 
-    pkaI = run_propka(pdb_file)
+    pkaI = parse_propka_pka(pka_file)
     res_sasa = residue_sasa_from_pqr(pdb_file, pqr_file)
 
     results = {}
@@ -664,8 +709,10 @@ def calculate_pka_by_sasa(pdb_file: str | Path, pqr_file: str | Path) -> dict:
     return results
 
 
-def calculate_protein_pka_sasa(pdb_file: str | Path, pqr_file: str | Path) -> float:
-    residues = calculate_pka_by_sasa(pdb_file, pqr_file)
+def calculate_protein_pka_sasa(
+    pdb_file: str | Path, pqr_file: str | Path, pka_file: str | Path
+) -> float:
+    residues = calculate_pka_by_sasa(pdb_file, pqr_file, pka_file)
 
     if not residues:
         return 0.0
@@ -677,7 +724,9 @@ R = 8.134  # J/mol/K
 T = 298.15  # K
 
 
-def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) -> float:
+def acid_base_stability_estimator(
+    pdb_file: str | Path, pqr_file: str | Path, pka_file: str | Path
+) -> float:
     """
     Computes the electrostatic stability estimator (ΔG)
     using PROPKA-derived pKa values and SASA exposure.
@@ -706,7 +755,7 @@ def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) ->
     }
 
     # Compute SASA-weighted pKa values
-    pka_results = calculate_pka_by_sasa(pdb_file, pqr_file)
+    pka_results = calculate_pka_by_sasa(pdb_file, pqr_file, pka_file)
 
     if not pka_results:
         return 0.0
@@ -741,83 +790,46 @@ def acid_base_stability_estimator(pdb_file: str | Path, pqr_file: str | Path) ->
     return (sum(delta_g_values) / len(delta_g_values)) / 1000.0
 
 
-def process_single_protein(
+def calculate_protein_metrics(
     pdb_file: str | Path,
-    aux_output_dir: str | Path,
-    bbox_min,
-    bbox_max,
-):
-    """Run the available PDB2PQR/APBS indicator pipeline for one protein.
-
-    Returns the legacy tuple shape. Metrics not implemented in this package version
-    are returned as ``N/A`` rather than relying on undefined helper functions.
-    """
-    from .electrostatics import find_dx_file, generate_apbs_in_fixed
-
-    require_executable("pdb2pqr", "Install PDB2PQR and ensure 'pdb2pqr' is on PATH.")
-    require_executable("apbs", "Install APBS and ensure 'apbs' is on PATH.")
-
+    pqr_file: str | Path,
+    dx_file: str | Path,
+    pka_file: str | Path | None = None,
+) -> ProteinMetricsResult:
+    """Calculate all available metrics from existing artifact files."""
     pdb_path = Path(pdb_file)
-    pdb_name = pdb_path.stem
-    pqr_file = Path(f"{pdb_name}.pqr")
+    pqr_path = Path(pqr_file)
+    dx_path = Path(dx_file)
+    pka_path = Path(pka_file) if pka_file is not None else None
 
-    subprocess.run(
-        ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_path), str(pqr_file)],
-        check=True,
-    )
-    in_path = generate_apbs_in_fixed(
-        pdb_path, pdb_name, bbox_min, bbox_max, resolution=0.75
-    )
-    log_path = Path(f"{pdb_name}.out").resolve()
-    with open(log_path, "w", encoding="utf-8") as log_handle:
-        subprocess.run(
-            ["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True
-        )
+    p_sasa, p_num, p_den = calculate_p_sasa(pqr_path, pdb_path, dx_path)
+    q_sasa, q_num, q_total_sasa = calculate_q_sasa(pqr_path)
+    ecpi_data = calculate_residue_exposed_charge(pqr_path, pdb_path)
+    see = calculate_see(pqr_path, dx_path)
+    hse, _, _ = calculate_hse(pdb_path, pqr_path)
 
-    dx_path = find_dx_file(pdb_name)
+    pka_sasa = None
+    abse = None
+    if pka_path is not None:
+        pka_sasa = calculate_protein_pka_sasa(pdb_path, pqr_path, pka_path)
+        abse = acid_base_stability_estimator(pdb_path, pqr_path, pka_path)
 
-    p_sasa, _, _ = calculate_p_sasa(pqr_file, pdb_path, dx_path)
-    q_sasa, _, _ = calculate_q_sasa(pqr_file)
-    ecpi_data = calculate_residue_exposed_charge(pqr_file, pdb_path)
-    see_val = calculate_see(pqr_file, dx_path)
-    pkaI_val = calculate_protein_pka_sasa(pdb_file, pqr_file)
-    hse_val, _, _ = calculate_hse(pdb_file, pqr_file)
-    abse_val = acid_base_stability_estimator(pdb_file, pqr_file)
-
-    # --- Print summary ---
-    print(f"✅ Protein: {pdb_name}")
-    print(f" Solvent-Accessible Surface Potential - P_SASA (kBT/e): {p_sasa:.2f}")
-    print(f" Solvent-Accessible Surface Charge - Q_SASA (e): {q_sasa:.2f}")
-    print(f" Exposed Charge % Index : {ecpi_data['percent_exposed_charge']:.2f}")
-    print(f" Surface Electrostatic Energy - SEE (kBT): {see_val:.2f}")
-    print(f" Hydrophobic Surface Exposure - HSE (dimensionless): {hse_val:.2f}")
-    print(
-        f" pKa Index of Ionizable Residue Groups - pKaI (dimensionless): {pkaI_val:.2f}"
-    )
-    print(f" Acid-Base Stability Estimator - ABSE (kJ/mol): {abse_val:.2f}")
-
-    aux_dir = Path(aux_output_dir)
-    aux_dir.mkdir(parents=True, exist_ok=True)
-    for candidate in [
-        f"{pdb_name}.in",
-        f"{pdb_name}.out",
-        f"{pdb_name}.pka",
-        f"{pdb_name}.pqr",
-        str(dx_path),
-        f"{pdb_name}-input.p",
-    ]:
-        candidate_path = Path(candidate)
-        if candidate_path.exists():
-            shutil.move(str(candidate_path), aux_dir / candidate_path.name)
-
-    return (
-        pdb_name,
-        f"{p_sasa:.2f}",
-        f"{q_sasa:.2f}",
-        f"{ecpi_data['percent_exposed_charge']:.2f}",
-        f"{see_val:.2f}",
-        f"{hse_val:.2f}",
-        f"{pkaI_val:.2f}",
-        f"{abse_val:.2f}",
-        # f"{surface_potential_percent:.2f}",
+    return ProteinMetricsResult(
+        protein_name=pdb_path.stem,
+        pdb_file=pdb_path,
+        pqr_file=pqr_path,
+        dx_file=dx_path,
+        pka_file=pka_path,
+        p_sasa=float(p_sasa),
+        q_sasa=float(q_sasa),
+        ecpi_percent=float(ecpi_data["percent_exposed_charge"]),
+        see=float(see),
+        hse=float(hse),
+        pka_sasa=float(pka_sasa) if pka_sasa is not None else None,
+        abse=float(abse) if abse is not None else None,
+        p_sasa_numerator=float(p_num),
+        p_sasa_denominator=float(p_den),
+        q_sasa_numerator=float(q_num),
+        q_sasa_total_sasa=float(q_total_sasa),
+        ecpi_data=ecpi_data,
     )

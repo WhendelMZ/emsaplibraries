@@ -1,14 +1,13 @@
-"""Helpers for structure alignment and APBS/PDB2PQR electrostatic runs."""
+"""Helpers for structure alignment and APBS input/output artifacts."""
 
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 import numpy as np
 
-from ._runtime import require_executable, require_module
+from ._runtime import require_module
 
 
 def replace_rU_with_r(file_path: str | Path) -> None:
@@ -120,31 +119,6 @@ def generate_apbs_in_fixed(
         handle.write("quit\n")
 
     return in_file
-
-
-def run_pdb2pqr(pdb_file: str | Path, pdb_name: str) -> str:
-    """Run PDB2PQR and return the generated PQR path."""
-    require_executable("pdb2pqr", "Install PDB2PQR and ensure 'pdb2pqr' is on PATH.")
-    pqr_file = f"{pdb_name}.pqr"
-    subprocess.run(
-        ["pdb2pqr", "--ff=PARSE", "--with-ph=7", str(pdb_file), pqr_file],
-        check=True,
-    )
-    return pqr_file
-
-
-def run_apbs(pdb_file: str | Path, pdb_name: str, bbox_min, bbox_max) -> str:
-    """Run APBS and return the output log path."""
-    require_executable("apbs", "Install APBS and ensure 'apbs' is on PATH.")
-    in_path = generate_apbs_in_fixed(pdb_file, pdb_name, bbox_min, bbox_max)
-    log_path = os.path.abspath(f"{pdb_name}.out")
-
-    with open(log_path, "w", encoding="utf-8") as log_handle:
-        subprocess.run(
-            ["apbs", in_path], stdout=log_handle, stderr=subprocess.STDOUT, check=True
-        )
-
-    return log_path
 
 
 def find_dx_file(pdb_name: str) -> str:
